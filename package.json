@@ -1,0 +1,20 @@
+{
+  "name": "energy-minimization",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Interactive visualizations of energy-minimizing point configurations",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node 8-S2/test/math.test.js"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "vite": "^8.3.8"
+  }
+}

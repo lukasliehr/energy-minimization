@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Eight points on the sphere</title>
+    <meta name="description" content="Interactive 3D companion to the paper 'Energy minimization for eight points on the sphere' by Kryvonos, Liehr and Taylor. Drag the points and watch the energy rise above the square antiprism." />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <script>
+      // Choose the theme before the first paint.
+      (function () {
+        var stored = null;
+        try { stored = localStorage.getItem('theme'); } catch (e) {}
+        var dark = stored ? stored === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+      })();
+    </script>
+  </head>
+  <body>
+    <main>
+      <section class="stage" aria-label="Interactive visualization">
+        <div class="view">
+          <nav class="links" aria-label="Links">
+            <a href="https://arxiv.org/abs/2609.22077" target="_blank" rel="noopener">Paper<span aria-hidden="true"> ↗</span></a>
+            <a href="https://github.com/lukasliehr/Energy-Minimization-8-Points" target="_blank" rel="noopener">Repository<span aria-hidden="true"> ↗</span></a>
+            <button class="icon-btn" id="theme-toggle" type="button" aria-label="Switch between light and dark theme" title="Switch theme">
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18a9 9 0 0 0 0-18Zm0 2v14a7 7 0 0 1 0-14Z" fill="currentColor" /></svg>
+            </button>
+          </nav>
+
+          <h1 class="sr-only">Energy minimization for eight points on the sphere</h1>
+
+          <canvas id="scene" aria-label="Three-dimensional view of eight points on the unit sphere. Drag a point to move it, drag the background to rotate."></canvas>
+          <p class="fallback" id="fallback" hidden>This visualization needs WebGL, which is not available in this browser.</p>
+        </div>
+
+        <div class="trace-row">
+          <canvas id="trace" class="trace" aria-label="Energy above the minimum during the last ten seconds. The line rises as the points move away from the minimizer."></canvas>
+        </div>
+
+        <div class="dock">
+          <div class="meter" role="status" aria-live="off">
+            <span class="meter-name" id="energy-name">Coulomb energy</span>
+            <span class="meter-value" id="energy-value">19.675</span>
+            <span class="status" id="status" data-state="good"><span class="status-icon" aria-hidden="true">✓</span><span id="status-text">minimum</span></span>
+          </div>
+
+          <div class="exponent">
+            <div class="marks">
+              <button type="button" class="mark" data-s="0" aria-pressed="false">Logarithmic</button>
+              <button type="button" class="mark" data-s="1" aria-pressed="true">Coulomb</button>
+              <output class="exponent-value" for="s-slider"><i>s</i> = <span id="s-value">1.00</span></output>
+            </div>
+            <input type="range" id="s-slider" min="0" max="1" step="0.001" value="0.333" aria-label="Riesz exponent s" />
+          </div>
+
+          <div class="actions">
+            <div class="group" role="group" aria-label="Start from">
+              <button type="button" id="btn-optimum">Antiprism</button>
+              <button type="button" id="btn-cube">Cube</button>
+              <button type="button" id="btn-random">Random</button>
+            </div>
+            <button class="btn primary" type="button" id="btn-relax">
+              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M7 4.5v15l12-7.5z" fill="currentColor" /></svg>
+              Minimize
+            </button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

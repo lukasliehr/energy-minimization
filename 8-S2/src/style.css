@@ -1,0 +1,448 @@
+/* Tokens. The theme is set on <html data-theme> before the first paint.
+   --upper and --lower are the colours of the two squares in the 3D view. */
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --surface-raised: #ffffff;
+  --fill: rgba(11, 11, 11, 0.05);
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #6f6e69;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.1);
+  --border-strong: rgba(11, 11, 11, 0.18);
+  --upper: #2a78d6;
+  --lower: #149a6b;
+  --good: #008300;
+  --warn: #c98500;
+  --sans: "Inter Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --serif: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #171716;
+  --surface-raised: #262625;
+  --fill: rgba(255, 255, 255, 0.07);
+  --ink: #f0efec;
+  --ink-2: #c3c2b7;
+  --muted: #9a9992;
+  --axis: #4a4a46;
+  --border: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.2);
+  --upper: #3987e5;
+  --lower: #199e70;
+  --good: #0ca30c;
+  --warn: #fab219;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+[hidden] { display: none !important; }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--page);
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: inherit; }
+i { font-family: var(--serif); font-size: 1.08em; }
+
+:focus-visible {
+  outline: 2px solid var(--upper);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ---- stage: the sphere with a slim bar of controls below it ------------- */
+
+.stage {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  height: 100dvh;
+  min-height: 560px;
+}
+
+.view {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+
+#scene {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  outline: none;
+}
+
+.fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 24px;
+  text-align: center;
+  color: var(--ink-2);
+}
+
+.links {
+  position: absolute;
+  z-index: 2;
+  top: 24px;
+  right: 28px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 13.5px;
+}
+
+.links a {
+  padding: 6px 10px;
+  border-radius: 8px;
+  color: var(--ink-2);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.links a:hover { background: var(--fill); color: var(--ink); }
+
+.icon-btn {
+  appearance: none;
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin-left: 2px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.icon-btn:hover { background: var(--fill); color: var(--ink); }
+
+/* ---- the line of the energy above the minimum, centred below the sphere ---- */
+
+.trace-row {
+  display: flex;
+  justify-content: center;
+  padding: 0 24px 20px;
+}
+
+.trace {
+  display: block;
+  width: min(560px, 100%);
+  height: 96px;
+}
+
+/* ---- dock: energy, the bar for s in the exact centre, and the actions ---- */
+
+.dock {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: end;
+  column-gap: 52px;
+  padding: 14px 28px 22px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+
+.meter {
+  justify-self: end;
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: baseline;
+  column-gap: 10px;
+}
+
+.meter-name {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.meter-value {
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.status {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 5.8em;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.status-icon { font-size: 11px; }
+.status[data-state="good"] .status-icon { color: var(--good); }
+.status[data-state="warn"] .status-icon { color: var(--warn); }
+
+/* One bar for the exponent s. The two classical energies are marked above it. */
+.exponent {
+  width: 340px;
+  padding-bottom: 8px;
+  font-size: 12.5px;
+}
+
+.marks {
+  position: relative;
+  height: 24px;
+}
+
+.mark, .exponent-value {
+  position: absolute;
+  bottom: 0;
+  padding: 0 0 8px;
+  font-weight: 550;
+  white-space: nowrap;
+}
+
+.mark {
+  appearance: none;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.mark:hover, .mark[aria-pressed="true"] { color: var(--ink); }
+
+/* A small tick at the place of the handle. The handle is 16px wide. */
+.mark::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  width: 1px;
+  height: 5px;
+  background: var(--axis);
+}
+
+.mark[data-s="0"] { left: 0; }
+.mark[data-s="0"]::after { left: 8px; }
+
+.mark[data-s="1"] {
+  left: calc(8px + (100% - 16px) / 3);
+  transform: translateX(-50%);
+}
+
+.mark[data-s="1"]::after { left: 50%; }
+
+.exponent-value {
+  right: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.exponent input {
+  display: block;
+  width: 100%;
+}
+
+input[type="range"] {
+  --p: 50%;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 18px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--ink) var(--p), var(--axis) var(--p));
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border: 1.5px solid var(--ink);
+  border-radius: 50%;
+  background: var(--surface-raised);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--axis);
+}
+
+input[type="range"]::-moz-range-progress {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ink);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border: 1.5px solid var(--ink);
+  border-radius: 50%;
+  background: var(--surface-raised);
+}
+
+.actions {
+  justify-self: start;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* The three starting configurations share one outline. */
+.group {
+  display: flex;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  background: var(--surface-raised);
+  overflow: hidden;
+}
+
+.group button {
+  appearance: none;
+  padding: 8px 13px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.group button + button { border-left: 1px solid var(--border); }
+.group button:hover { background: var(--fill); }
+.group button:focus-visible { outline-offset: -2px; }
+
+.btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  background: var(--surface-raised);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.btn:hover { background: color-mix(in srgb, var(--surface-raised) 90%, var(--ink)); }
+.btn:active { transform: translateY(0.5px); }
+.btn:disabled { opacity: 0.4; cursor: default; }
+
+.btn.primary {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--page);
+}
+
+.btn.primary:hover:not(:disabled) { background: var(--ink); opacity: 0.86; }
+
+/* ---- narrow screens ----------------------------------------------------- */
+
+@media (max-width: 1040px) {
+  /* The bar for s moves to its own centred row. */
+  .dock {
+    grid-template-columns: auto auto;
+    justify-content: center;
+    row-gap: 14px;
+    column-gap: 40px;
+    padding: 12px 20px 18px;
+  }
+
+  .exponent {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    justify-self: center;
+    padding-bottom: 0;
+  }
+
+  .links { top: 18px; right: 16px; }
+}
+
+@media (max-width: 760px) {
+  .stage {
+    display: block;
+    height: auto;
+    min-height: 0;
+  }
+
+  .view { overflow: visible; }
+
+  .links {
+    position: static;
+    justify-content: flex-end;
+    padding: 10px 10px 0;
+  }
+
+  #scene {
+    position: static;
+    height: min(100vw, 62svh);
+  }
+
+  .trace-row { padding: 0 18px 14px; }
+  .trace { height: 72px; }
+
+  .dock {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    row-gap: 18px;
+    padding: 16px 18px 22px;
+  }
+
+  .meter { justify-self: center; }
+  .exponent { grid-column: auto; grid-row: auto; width: 100%; }
+  .actions { justify-self: stretch; flex-wrap: wrap; }
+  .group { flex: 1 1 100%; }
+  .group button { flex: 1; }
+  .actions .primary { flex: 1 1 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
