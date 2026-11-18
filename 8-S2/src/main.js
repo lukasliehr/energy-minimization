@@ -4,7 +4,7 @@ import './style.css';
 import { SphereScene } from './scene.js';
 import { Trace } from './trace.js';
 import {
-  N, bestMatching, descend, energy, findSquares, flowStep, forces, hullEdges, hullFaces, optimalA, perturb, prism,
+  N, bestMatching, descend, energy, findSquares, flowStep, forces, hullFaces, optimalA, perturb, prism,
   prismParameters, randomConfiguration, referenceForce, setAntiprismHeight, slerpConfiguration,
 } from './math.js';
 
@@ -121,7 +121,7 @@ function morphTo(target, final) {
   }
   state.mode = 'free';
   state.groups = groups;
-  scene?.setGroups(groups);
+  scene?.startGroupTransition(groups);
   state.morph = { from: state.Y.slice(), to, start: performance.now(), duration: 800, final: { ...final, Y: target } };
 }
 
@@ -130,12 +130,13 @@ function stepMorph(now) {
   const u = Math.min((now - start) / duration, 1);
   const eased = u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
   slerpConfiguration(from, to, eased, state.Y);
+  scene?.setGroupBlend(eased);
   if (u >= 1) {
     state.morph = null;
     // Relabel so that the indices are those of the target.
     state.Y = final.mode === 'optimum' ? prism(state.aOpt) : final.Y.slice();
     state.groups = final.groups.slice();
-    scene?.setGroups(state.groups, true);
+    scene?.setGroups(state.groups);
     state.mode = final.mode;
   }
   state.dirty = true;
@@ -201,7 +202,11 @@ function startRelax() {
   const path = descentPath();
   // About 1.8 seconds from the cube, a little more for longer ways and less for short ones.
   const duration = 1000 * (0.6 + 1.3 * Math.pow(path.length, 0.6));
-  state.relax = { ...path, start: performance.now(), duration, index: 0 };
+  // The squares of the configuration at the end are known already, so their colours
+  // can come in gradually on the way instead of switching on arrival.
+  const groups = (path.reachesMinimum && squareGroups(path.frames[path.frames.length - 1])) || null;
+  state.relax = { ...path, groups, start: performance.now(), duration, index: 0 };
+  scene?.startGroupTransition(groups || state.groups);
   state.dirty = true;
 }
 
@@ -209,11 +214,13 @@ function stepRelax(now) {
   const relax = state.relax;
   const { frames, lengths } = relax;
   const u = Math.max(0, Math.min((now - relax.start) / relax.duration, 1));
+  scene?.setGroupBlend(u * u * (3 - 2 * u));
   if (u >= 1 || frames.length === 1) {
     state.Y.set(frames[frames.length - 1]);
     state.relax = null;
-    if (relax.reachesMinimum) arriveAtOptimum();
-    else state.mode = 'free';
+    if (relax.groups) state.groups = relax.groups;
+    scene?.setGroups(state.groups);
+    state.mode = relax.groups ? 'optimum' : 'free';
   } else {
     const target = settle(u) * relax.length;
     let k = relax.index;
@@ -225,28 +232,47 @@ function stepRelax(now) {
   state.dirty = true;
 }
 
-/** The configuration is an antiprism. Find its two squares and colour them. */
-function arriveAtOptimum() {
-  const squares = findSquares(hullFaces(state.Y));
-  if (!squares) return;
+/**
+ * The two squares of an antiprism Y as a colouring of its points, or null if Y has no
+ * two disjoint square faces. Points keep the colour they have now where possible.
+ */
+function squareGroups(Y) {
+  const squares = findSquares(hullFaces(Y));
+  if (!squares) return null;
   let [top, bottom] = squares;
   const agreement = (t, b) => t.filter((m) => state.groups[m] === 0).length + b.filter((m) => state.groups[m] === 1).length;
-  const height = (face) => face.reduce((sum, m) => sum + state.Y[3 * m + 2], 0);
+  const height = (face) => face.reduce((sum, m) => sum + Y[3 * m + 2], 0);
   const kept = agreement(top, bottom), swapped = agreement(bottom, top);
   if (swapped > kept || (swapped === kept && height(bottom) > height(top))) [top, bottom] = [bottom, top];
   const groups = new Array(N);
   top.forEach((m) => { groups[m] = 0; });
   bottom.forEach((m) => { groups[m] = 1; });
-  state.groups = groups;
-  scene?.setGroups(groups);
-  state.mode = 'optimum';
-  state.dirty = true;
+  return groups;
 }
 
 // ---- drawing --------------------------------------------------------------
 
 function formatExcess(value) {
   return value < 0.0005 ? '<0.001' : `+${value.toFixed(3)}`;
+}
+
+// Two points are joined by a line when they are close. The line is fully drawn up to the
+// distance LINE_NEAR and fades out until LINE_FAR, so nothing appears or vanishes abruptly
+// while a point moves. In the antiprism and in the cube the edges are shorter than 1.30
+// and all other pairs are further apart than 1.63, for every exponent s.
+const LINE_NEAR = 1.38, LINE_FAR = 1.58;
+
+function lines(Y) {
+  const list = [];
+  for (let i = 0; i < N; i++) {
+    for (let j = i + 1; j < N; j++) {
+      const d = Math.hypot(Y[3 * i] - Y[3 * j], Y[3 * i + 1] - Y[3 * j + 1], Y[3 * i + 2] - Y[3 * j + 2]);
+      const u = Math.max(0, Math.min(1, (LINE_FAR - d) / (LINE_FAR - LINE_NEAR)));
+      const weight = u * u * (3 - 2 * u);
+      if (weight > 0.01) list.push([i, j, weight]);
+    }
+  }
+  return list;
 }
 
 function refresh() {
@@ -258,7 +284,7 @@ function refresh() {
     const faces = hullFaces(Y);
     scene.setPositions(Y);
     scene.setFaces(faces);
-    scene.setEdges(hullEdges(faces));
+    scene.setEdges(lines(Y));
     scene.setForces(F, state.fRef);
   }
   const optimal = state.excess < DISPLAY_TOLERANCE;
@@ -327,7 +353,7 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (ev
 // ---- start ----------------------------------------------------------------
 
 scene?.setAutoRotate(!window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-scene?.setGroups(state.groups, true);
+scene?.setGroups(state.groups);
 applyTheme(document.documentElement.dataset.theme || 'light');
 setExponent(1);
 

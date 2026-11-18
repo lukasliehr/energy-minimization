@@ -57,28 +57,21 @@ export class Trace {
     ctx.lineTo(width, base + 0.5);
     ctx.stroke();
 
-    // Stretches of time during which the energy was above the minimum.
-    const runs = [];
-    let run = null;
-    for (let k = 1; k < times.length; k++) {
-      if (levels[k - 1] > 0 || levels[k] > 0) {
-        if (!run) { run = [[x(times[k - 1]), y(levels[k - 1])]]; runs.push(run); }
-        run.push([x(times[k]), y(levels[k])]);
-      } else {
-        run = null;
-      }
+    // One unbroken line. Before the first sample it continues at the level of that sample.
+    const points = [];
+    if (times.length) {
+      if (x(times[0]) > 0) points.push([0, y(levels[0])]);
+      for (let k = 0; k < times.length; k++) points.push([x(times[k]), y(levels[k])]);
     }
 
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
-    for (const points of runs) {
+    if (points.length > 1) {
+      // A light wash between the line and the baseline.
       ctx.beginPath();
       points.forEach(([px, py], k) => (k === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)));
-      // A light wash between the line and the baseline.
-      ctx.save();
       ctx.lineTo(points[points.length - 1][0], base);
       ctx.lineTo(points[0][0], base);
       ctx.closePath();
+      ctx.save();
       ctx.globalAlpha = 0.1;
       ctx.fillStyle = color;
       ctx.fill();
@@ -88,6 +81,8 @@ export class Trace {
       points.forEach(([px, py], k) => (k === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)));
       ctx.strokeStyle = color;
       ctx.lineWidth = 2.5;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
       ctx.stroke();
     }
 
