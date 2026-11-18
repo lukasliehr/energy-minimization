@@ -7,7 +7,15 @@ import { N } from './math.js';
 
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
 const POINT_RADIUS = 0.055;
-const FIT_RADIUS = 1.3;
+// What has to fit into the view, in units of the radius of the sphere: the sphere with
+// its arrows, and below it the floor with the shadow.
+const FIT_WIDTH = 1.3;
+const FIT_ABOVE = 1.2;
+const FIT_BELOW = 1.66;
+// The floor is fixed with respect to the viewer, who looks down on it at a flat angle.
+// Turning the view turns the sphere above it, like a ball that hovers over a table.
+const FLOOR_DISTANCE = 1.3;
+const FLOOR_ELEVATION = (15 * Math.PI) / 180;
 
 // The colours of the two squares and of the background come from the CSS
 // variables --upper, --lower and --page in style.css.
@@ -23,6 +31,9 @@ const SCENE_THEMES = {
     glassAlpha: 0.045,
     rimAlpha: 0.5,
     specular: 0.55,
+    shadow: '#141a2a',
+    shadowOpacity: 0.42,
+    floorLight: 0,
   },
   dark: {
     neutral: '#8f8e87',
@@ -35,6 +46,9 @@ const SCENE_THEMES = {
     glassAlpha: 0.04,
     rimAlpha: 0.42,
     specular: 0.4,
+    shadow: '#000000',
+    shadowOpacity: 0.9,
+    floorLight: 0.13,
   },
 };
 
@@ -126,6 +140,7 @@ export class SphereScene {
     this._buildEdges();
     this._buildFaces();
     this._buildArrows();
+    this._buildFloor();
     this._bindPointer();
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
@@ -217,6 +232,48 @@ export class SphereScene {
     }
   }
 
+  /** A soft shadow on the floor below the sphere and, on a dark floor, a faint pool of light around it. */
+  _buildFloor() {
+    const size = 256, half = size / 2;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const gradient = ctx.createRadialGradient(half, half, 0, half, half, half);
+    [[0, 1], [0.25, 0.8], [0.5, 0.42], [0.75, 0.12], [1, 0]].forEach(([stop, alpha]) => {
+      gradient.addColorStop(stop, `rgba(255, 255, 255, ${alpha})`);
+    });
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+    const texture = new THREE.CanvasTexture(canvas);
+    const geometry = new THREE.PlaneGeometry(2, 2);
+    const disc = (radius, order) => {
+      const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, fog: false });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.scale.setScalar(radius);
+      mesh.renderOrder = order;
+      return mesh;
+    };
+    this.floorLight = disc(1.45, -2);
+    this.floorShadow = disc(1, -1);
+    this.floor = new THREE.Group();
+    this.floor.add(this.floorLight, this.floorShadow);
+    this.scene.add(this.floor);
+  }
+
+  /** Keep the floor below the sphere as the viewer sees it. */
+  _placeFloor() {
+    this.camera.updateMatrixWorld();
+    const e = this.camera.matrixWorld.elements;
+    const right = new THREE.Vector3(e[0], e[1], e[2]);
+    const up = new THREE.Vector3(e[4], e[5], e[6]);
+    const back = new THREE.Vector3(e[8], e[9], e[10]);
+    const normal = up.multiplyScalar(Math.cos(FLOOR_ELEVATION)).addScaledVector(back, Math.sin(FLOOR_ELEVATION));
+    const forward = new THREE.Vector3().crossVectors(normal, right);
+    this.floor.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(right, forward, normal));
+    this.floor.position.copy(normal).multiplyScalar(-FLOOR_DISTANCE);
+  }
+
   // ---- state setters ------------------------------------------------------
 
   /** Call after <html data-theme> has changed. */
@@ -235,6 +292,10 @@ export class SphereScene {
     this.faces.material.color.set(theme.face);
     this.faces.material.opacity = theme.faceOpacity;
     this.arrowMaterial.color.set(theme.arrow);
+    this.floorShadow.material.color.set(theme.shadow);
+    this.floorShadow.material.opacity = theme.shadowOpacity;
+    this.floorLight.material.opacity = theme.floorLight;
+    this.floorLight.visible = theme.floorLight > 0;
     const u = this.sphereUniforms;
     u.uTint.value = displayColor(theme.glassTint);
     u.uRim.value = displayColor(theme.glassRim);
@@ -445,26 +506,37 @@ export class SphereScene {
 
   resize() {
     const width = Math.max(this.canvas.clientWidth, 1), height = Math.max(this.canvas.clientHeight, 1);
+    this.width = width;
+    this.height = height;
     this.renderer.setSize(width, height, false);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     const half = Math.tan((this.camera.fov * Math.PI) / 360);
-    this.fitDistance = FIT_RADIUS / (half * Math.min(1, this.camera.aspect));
+    this.fitDistance = Math.max(FIT_WIDTH / (half * this.camera.aspect), (FIT_ABOVE + FIT_BELOW) / (2 * half));
     // Keep the zoom chosen by the user and let the limits follow the size of the view.
     this.controls.minDistance = 0.42 * this.fitDistance;
     this.controls.maxDistance = 2.4 * this.fitDistance;
     this.camera.position.setLength(this.fitDistance * this.zoom);
+    this.viewShift = null;
   }
 
   render() {
     const distance = this.camera.position.length();
+    const half = Math.tan((this.camera.fov * Math.PI) / 360);
     // Direct rotation without easing: the point of the sphere under the pointer stays under it.
     // OrbitControls turns by 2 pi * rotateSpeed / height per pixel, and the front of the unit
     // sphere, at distance - 1 from the camera, moves by height / (2 tan(fov / 2) (distance - 1))
     // pixels per radian.
-    this.controls.rotateSpeed = (Math.tan((this.camera.fov * Math.PI) / 360) * (distance - 1)) / Math.PI;
+    this.controls.rotateSpeed = (half * (distance - 1)) / Math.PI;
     this.controls.update();
     this.zoom = Math.max(0.42, Math.min(2.4, distance / this.fitDistance));
+    // The sphere sits above the middle of the view, which leaves room for the floor below it.
+    const shift = Math.round((((FIT_BELOW - FIT_ABOVE) / 2) * this.height) / (2 * half * distance));
+    if (shift !== this.viewShift) {
+      this.viewShift = shift;
+      this.camera.setViewOffset(this.width, this.height, 0, shift, this.width, this.height);
+    }
+    this._placeFloor();
     this.scene.fog.near = distance - 0.4;
     this.scene.fog.far = distance + 3.4;
     for (let i = 0; i < N; i++) {
