@@ -332,29 +332,11 @@ $('btn-cube').addEventListener('click', () => morphTo(prism(1 / 3, 0), { mode: '
 $('btn-random').addEventListener('click', () => morphTo(randomConfiguration(), { mode: 'free', groups: NO_GROUPS }));
 $('btn-relax').addEventListener('click', startRelax);
 
-function applyTheme(name) {
-  document.documentElement.dataset.theme = name;
-  scene?.setTheme(name);
-  trace.invalidate();
-  state.dirty = true;
-}
-
-$('theme-toggle').addEventListener('click', () => {
-  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-  try { localStorage.setItem('theme', next); } catch (error) { /* private mode */ }
-  applyTheme(next);
-});
-window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (event) => {
-  let stored = null;
-  try { stored = localStorage.getItem('theme'); } catch (error) { /* private mode */ }
-  if (!stored) applyTheme(event.matches ? 'dark' : 'light');
-});
-
 // ---- start ----------------------------------------------------------------
 
 scene?.setAutoRotate(!window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 scene?.setGroups(state.groups);
-applyTheme(document.documentElement.dataset.theme || 'light');
+scene?.applyColors();
 setExponent(1);
 
 

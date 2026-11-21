@@ -1,5 +1,4 @@
-/* Tokens. The theme is set on <html data-theme> before the first paint.
-   --upper and --lower are the colours of the two squares in the 3D view. */
+/* Tokens. --upper and --lower are the colours of the two squares in the 3D view. */
 :root {
   color-scheme: light;
   --page: #f9f9f7;
@@ -18,24 +17,6 @@
   --warn: #c98500;
   --sans: "Inter Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
   --serif: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
-}
-
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --page: #0d0d0d;
-  --surface: #171716;
-  --surface-raised: #262625;
-  --fill: rgba(255, 255, 255, 0.07);
-  --ink: #f0efec;
-  --ink-2: #c3c2b7;
-  --muted: #9a9992;
-  --axis: #4a4a46;
-  --border: rgba(255, 255, 255, 0.1);
-  --border-strong: rgba(255, 255, 255, 0.2);
-  --upper: #3987e5;
-  --lower: #199e70;
-  --good: #0ca30c;
-  --warn: #fab219;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -129,22 +110,6 @@ i { font-family: var(--serif); font-size: 1.08em; }
 }
 
 .links a:hover { background: var(--fill); color: var(--ink); }
-
-.icon-btn {
-  appearance: none;
-  display: inline-grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  margin-left: 2px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--ink-2);
-  cursor: pointer;
-}
-
-.icon-btn:hover { background: var(--fill); color: var(--ink); }
 
 /* ---- the line of the energy above the minimum, centred below the sphere ---- */
 

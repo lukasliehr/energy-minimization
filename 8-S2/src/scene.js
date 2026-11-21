@@ -19,37 +19,19 @@ const FLOOR_ELEVATION = (15 * Math.PI) / 180;
 
 // The colours of the two squares and of the background come from the CSS
 // variables --upper, --lower and --page in style.css.
-const SCENE_THEMES = {
-  light: {
-    neutral: '#7d7c76',
-    edge: '#6f6e68',
-    face: '#6a7f9e',
-    faceOpacity: 0.085,
-    arrow: '#2b2b29',
-    glassTint: '#8794a8',
-    glassRim: '#5b6b84',
-    glassAlpha: 0.045,
-    rimAlpha: 0.5,
-    specular: 0.55,
-    shadow: '#141a2a',
-    shadowOpacity: 0.42,
-    floorLight: 0,
-  },
-  dark: {
-    neutral: '#8f8e87',
-    edge: '#a3a29a',
-    face: '#9db4d6',
-    faceOpacity: 0.075,
-    arrow: '#e8e7e2',
-    glassTint: '#7f93ad',
-    glassRim: '#a9c1e3',
-    glassAlpha: 0.04,
-    rimAlpha: 0.42,
-    specular: 0.4,
-    shadow: '#000000',
-    shadowOpacity: 0.9,
-    floorLight: 0.13,
-  },
+const COLORS = {
+  neutral: '#7d7c76',
+  edge: '#6f6e68',
+  face: '#6a7f9e',
+  faceOpacity: 0.085,
+  arrow: '#2b2b29',
+  glassTint: '#8794a8',
+  glassRim: '#5b6b84',
+  glassAlpha: 0.045,
+  rimAlpha: 0.5,
+  specular: 0.55,
+  shadow: '#141a2a',
+  shadowOpacity: 0.42,
 };
 
 const sphereVertexShader = /* glsl */ `
@@ -105,7 +87,7 @@ export class SphereScene {
     this.dragFar = false;
     this.hoverIndex = -1;
     this.zoom = 1;
-    this.theme = { ...SCENE_THEMES.light, background: '#f9f9f7', groups: ['#2a78d6', '#149a6b'] };
+    this.theme = { ...COLORS, background: '#f9f9f7', groups: ['#2a78d6', '#149a6b'] };
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -232,7 +214,7 @@ export class SphereScene {
     }
   }
 
-  /** A soft shadow on the floor below the sphere and, on a dark floor, a faint pool of light around it. */
+  /** A soft shadow on the floor below the sphere. */
   _buildFloor() {
     const size = 256, half = size / 2;
     const canvas = document.createElement('canvas');
@@ -246,18 +228,9 @@ export class SphereScene {
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, size, size);
     const texture = new THREE.CanvasTexture(canvas);
-    const geometry = new THREE.PlaneGeometry(2, 2);
-    const disc = (radius, order) => {
-      const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, fog: false });
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.scale.setScalar(radius);
-      mesh.renderOrder = order;
-      return mesh;
-    };
-    this.floorLight = disc(1.45, -2);
-    this.floorShadow = disc(1, -1);
-    this.floor = new THREE.Group();
-    this.floor.add(this.floorLight, this.floorShadow);
+    const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, fog: false });
+    this.floor = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+    this.floor.renderOrder = -1;
     this.scene.add(this.floor);
   }
 
@@ -276,12 +249,12 @@ export class SphereScene {
 
   // ---- state setters ------------------------------------------------------
 
-  /** Call after <html data-theme> has changed. */
-  setTheme(name) {
+  /** Read the colours from the stylesheet and apply them to the scene. */
+  applyColors() {
     const css = getComputedStyle(document.documentElement);
     const read = (variable, fallback) => css.getPropertyValue(variable).trim() || fallback;
     const theme = {
-      ...(SCENE_THEMES[name] || SCENE_THEMES.light),
+      ...COLORS,
       background: read('--page', '#f9f9f7'),
       groups: [read('--upper', '#2a78d6'), read('--lower', '#149a6b')],
     };
@@ -292,10 +265,8 @@ export class SphereScene {
     this.faces.material.color.set(theme.face);
     this.faces.material.opacity = theme.faceOpacity;
     this.arrowMaterial.color.set(theme.arrow);
-    this.floorShadow.material.color.set(theme.shadow);
-    this.floorShadow.material.opacity = theme.shadowOpacity;
-    this.floorLight.material.opacity = theme.floorLight;
-    this.floorLight.visible = theme.floorLight > 0;
+    this.floor.material.color.set(theme.shadow);
+    this.floor.material.opacity = theme.shadowOpacity;
     const u = this.sphereUniforms;
     u.uTint.value = displayColor(theme.glassTint);
     u.uRim.value = displayColor(theme.glassRim);

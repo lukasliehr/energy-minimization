@@ -12,7 +12,7 @@ export class Trace {
     this.stale = true;
   }
 
-  /** Ask for a repaint, for example after a change of theme or size. */
+  /** Ask for a repaint, for example after a change of size. */
   invalidate() {
     this.stale = true;
   }
