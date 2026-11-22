@@ -4,12 +4,23 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Energy minimization</title>
-    <meta name="description" content="Interactive visualizations of energy-minimizing point configurations." />
-    <!-- There is one visualization so far. This page forwards to it and can become an overview later. -->
-    <meta http-equiv="refresh" content="0; url=./8-S2/" />
+    <meta name="description" content="Interactive visualizations of energy-minimizing configurations of points on the sphere." />
+    <meta name="color-scheme" content="light" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   </head>
   <body>
-    <p><a href="./8-S2/">Eight points on the sphere</a></p>
+    <main class="overview">
+      <h1 class="sr-only">Energy minimization on the sphere</h1>
+      <a class="tile" href="./8-S2/" aria-label="Eight points on the sphere">
+        <canvas data-problem="8-S2"></canvas>
+        <span class="tile-label"><i>N</i> = 8</span>
+      </a>
+      <a class="tile" href="./14-S2/" aria-label="Fourteen points on the sphere">
+        <canvas data-problem="14-S2"></canvas>
+        <span class="tile-label"><i>N</i> = 14</span>
+      </a>
+    </main>
+
+    <script type="module" src="./overview/main.js"></script>
   </body>
 </html>

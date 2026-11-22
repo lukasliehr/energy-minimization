@@ -1,12 +1,10 @@
-// Three-dimensional view: glass sphere, eight draggable points, inscribed polyhedron
-// and force arrows. Coordinates are those of the paper, with the z-axis pointing up.
+// Three-dimensional view: glass sphere, draggable points, inscribed polyhedron and
+// force arrows. Coordinates are those of the papers, with the z-axis pointing up.
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { N } from './math.js';
 
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
-const POINT_RADIUS = 0.055;
 // What has to fit into the view, in units of the radius of the sphere: the sphere with
 // its arrows, and below it the floor with the shadow.
 const FIT_WIDTH = 1.3;
@@ -17,8 +15,8 @@ const FIT_BELOW = 1.66;
 const FLOOR_DISTANCE = 1.3;
 const FLOOR_ELEVATION = (15 * Math.PI) / 180;
 
-// The colours of the two squares and of the background come from the CSS
-// variables --upper, --lower and --page in style.css.
+// The colours of the groups of points and of the background come from CSS
+// variables in style.css, for example --upper, --lower and --page.
 const COLORS = {
   neutral: '#7d7c76',
   edge: '#6f6e68',
@@ -70,18 +68,25 @@ const sphereFragmentShader = /* glsl */ `
 const displayColor = (hex) => new THREE.Color().setStyle(hex, THREE.LinearSRGBColorSpace);
 
 export class SphereScene {
-  constructor(canvas, handlers = {}) {
+  /**
+   * count: number of points. groupColors: the CSS variable with the colour of each group.
+   * interactive = false gives a view that only turns by itself, as on the overview page.
+   */
+  constructor(canvas, { count, handlers = {}, groupColors = ['--upper', '--lower'], pointRadius = 0.055, interactive = true }) {
     this.canvas = canvas;
+    this.n = count;
     this.handlers = handlers;
-    this.positions = new Float64Array(3 * N);
+    this.groupColors = groupColors;
+    this.pointRadius = pointRadius;
+    this.positions = new Float64Array(3 * this.n);
     // Colours of the points and of the lines change by blending from one colouring to the next.
     const colors = (count) => Array.from({ length: count }, () => new THREE.Color());
-    this.groupsFrom = new Array(N).fill(-1);
-    this.groupsTo = new Array(N).fill(-1);
-    this.pointFrom = colors(N);
-    this.pointTo = colors(N);
-    this.pairFrom = colors((N * (N - 1)) / 2);
-    this.pairTo = colors((N * (N - 1)) / 2);
+    this.groupsFrom = new Array(this.n).fill(-1);
+    this.groupsTo = new Array(this.n).fill(-1);
+    this.pointFrom = colors(this.n);
+    this.pointTo = colors(this.n);
+    this.pairFrom = colors((this.n * (this.n - 1)) / 2);
+    this.pairTo = colors((this.n * (this.n - 1)) / 2);
     this.blend = 1;
     this.dragIndex = -1;
     this.dragFar = false;
@@ -114,7 +119,7 @@ export class SphereScene {
 
     this.controls = new OrbitControls(this.camera, canvas);
     this.controls.enablePan = false;
-    this.controls.autoRotateSpeed = 0.55;
+    this.controls.autoRotateSpeed = interactive ? 0.55 : 1.4;
     this.controls.addEventListener('start', () => this.handlers.onInteract?.());
 
     this._buildSphere();
@@ -123,7 +128,8 @@ export class SphereScene {
     this._buildFaces();
     this._buildArrows();
     this._buildFloor();
-    this._bindPointer();
+    if (interactive) this._bindPointer();
+    else this.controls.enabled = false;
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(canvas);
@@ -154,10 +160,10 @@ export class SphereScene {
   }
 
   _buildPoints() {
-    const geometry = new THREE.SphereGeometry(POINT_RADIUS, 40, 28);
+    const geometry = new THREE.SphereGeometry(this.pointRadius, 40, 28);
     this.outlineMaterial = new THREE.MeshBasicMaterial({ side: THREE.BackSide, fog: false });
     this.points = [];
-    for (let i = 0; i < N; i++) {
+    for (let i = 0; i < this.n; i++) {
       const material = new THREE.MeshStandardMaterial({ roughness: 0.38, metalness: 0.05 });
       const mesh = new THREE.Mesh(geometry, material);
       const outline = new THREE.Mesh(geometry, this.outlineMaterial);
@@ -172,7 +178,7 @@ export class SphereScene {
   _buildEdges() {
     const geometry = new THREE.CylinderGeometry(1, 1, 1, 10, 1, true);
     const material = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    this.edges = new THREE.InstancedMesh(geometry, material, (N * (N - 1)) / 2);
+    this.edges = new THREE.InstancedMesh(geometry, material, (this.n * (this.n - 1)) / 2);
     this.edges.count = 0;
     this.edges.frustumCulled = false;
     this.scene.add(this.edges);
@@ -180,7 +186,8 @@ export class SphereScene {
 
   _buildFaces() {
     const geometry = new THREE.BufferGeometry();
-    this.facePositions = new Float32Array(12 * 3 * 3);
+    // A polyhedron with n vertices has at most 2n - 4 triangles.
+    this.facePositions = new Float32Array((2 * this.n - 4) * 9);
     geometry.setAttribute('position', new THREE.BufferAttribute(this.facePositions, 3));
     geometry.setDrawRange(0, 0);
     // An even tint without lighting. The body of the polyhedron changes continuously with
@@ -202,7 +209,7 @@ export class SphereScene {
     const head = new THREE.ConeGeometry(0.036, 0.1, 20).translate(0, 0.05, 0);
     this.arrowMaterial = new THREE.MeshStandardMaterial({ roughness: 0.5 });
     this.arrows = [];
-    for (let i = 0; i < N; i++) {
+    for (let i = 0; i < this.n; i++) {
       const group = new THREE.Group();
       const shaftMesh = new THREE.Mesh(shaft, this.arrowMaterial);
       const headMesh = new THREE.Mesh(head, this.arrowMaterial);
@@ -256,7 +263,7 @@ export class SphereScene {
     const theme = {
       ...COLORS,
       background: read('--page', '#f9f9f7'),
-      groups: [read('--upper', '#2a78d6'), read('--lower', '#149a6b')],
+      groups: this.groupColors.map((variable) => read(variable, '#7d7c76')),
     };
     this.theme = theme;
     this.renderer.setClearColor(new THREE.Color(theme.background), 1);
@@ -278,18 +285,18 @@ export class SphereScene {
     if (this.lastEdges) this.setEdges(this.lastEdges);
   }
 
-  /** Colours of a colouring: a point has the colour of its square, a line inside one square too. */
+  /** Colours of a colouring: a point has the colour of its group, a line inside one group too. */
   _fillColors(groups, points, pairs) {
     let index = 0;
-    for (let i = 0; i < N; i++) {
-      points[i].set(groups[i] === 0 || groups[i] === 1 ? this.theme.groups[groups[i]] : this.theme.neutral);
-      for (let j = i + 1; j < N; j++) {
+    for (let i = 0; i < this.n; i++) {
+      points[i].set(groups[i] >= 0 ? this.theme.groups[groups[i]] : this.theme.neutral);
+      for (let j = i + 1; j < this.n; j++) {
         pairs[index++].set(groups[i] === groups[j] && groups[i] >= 0 ? this.theme.groups[groups[i]] : this.theme.edge);
       }
     }
   }
 
-  /** Colour the points at once. groups[i] is 0 (upper square), 1 (lower square) or -1 (no structure). */
+  /** Colour the points at once. groups[i] is the group of point i, or -1 for no structure. */
   setGroups(groups) {
     this.groupsFrom = groups.slice();
     this.groupsTo = groups.slice();
@@ -300,7 +307,7 @@ export class SphereScene {
 
   /** Start a gradual change from the colours shown now to those of groups. Advance it with setGroupBlend. */
   startGroupTransition(groups) {
-    for (let i = 0; i < N; i++) this.pointFrom[i].lerp(this.pointTo[i], this.blend);
+    for (let i = 0; i < this.n; i++) this.pointFrom[i].lerp(this.pointTo[i], this.blend);
     for (let k = 0; k < this.pairFrom.length; k++) this.pairFrom[k].lerp(this.pairTo[k], this.blend);
     if (this.blend >= 0.5) this.groupsFrom = this.groupsTo;
     this.groupsTo = groups.slice();
@@ -315,7 +322,7 @@ export class SphereScene {
 
   setPositions(Y) {
     this.positions.set(Y);
-    for (let i = 0; i < N; i++) this.points[i].position.set(Y[3 * i], Y[3 * i + 1], Y[3 * i + 2]);
+    for (let i = 0; i < this.n; i++) this.points[i].position.set(Y[3 * i], Y[3 * i + 1], Y[3 * i + 2]);
   }
 
   /**
@@ -338,7 +345,7 @@ export class SphereScene {
       scale.set(radius, length, radius);
       matrix.compose(a.add(b).multiplyScalar(0.5), quaternion, scale);
       this.edges.setMatrixAt(index, matrix);
-      const pair = (i * (2 * N - i - 1)) / 2 + (j - i - 1);
+      const pair = (i * (2 * this.n - i - 1)) / 2 + (j - i - 1);
       color.copy(this.pairFrom[pair]).lerp(this.pairTo[pair], this.blend).lerp(background, 0.45 * (1 - weight));
       this.edges.setColorAt(index, color);
     });
@@ -365,7 +372,7 @@ export class SphereScene {
   /** F holds the tangential forces. reference is the force that gives a medium arrow. */
   setForces(F, reference) {
     const direction = new THREE.Vector3();
-    for (let i = 0; i < N; i++) {
+    for (let i = 0; i < this.n; i++) {
       const arrow = this.arrows[i];
       direction.set(F[3 * i], F[3 * i + 1], F[3 * i + 2]);
       const magnitude = direction.length();
@@ -374,7 +381,7 @@ export class SphereScene {
       arrow.visible = true;
       arrow.position.copy(this.points[i].position);
       arrow.quaternion.setFromUnitVectors(Y_AXIS, direction.divideScalar(magnitude));
-      const total = POINT_RADIUS + length;
+      const total = this.pointRadius + length;
       arrow.userData.shaftMesh.scale.set(1, Math.max(total - 0.095, 0.001), 1);
       arrow.userData.headMesh.position.set(0, total - 0.1, 0);
     }
@@ -400,7 +407,7 @@ export class SphereScene {
       const rect = canvas.getBoundingClientRect();
       const threshold = event.pointerType === 'touch' ? 34 : 22;
       let best = -1, bestScore = Infinity;
-      for (let i = 0; i < N; i++) {
+      for (let i = 0; i < this.n; i++) {
         const p = this.points[i].position;
         projected.copy(p).project(this.camera);
         const px = rect.left + (0.5 + 0.5 * projected.x) * rect.width;
@@ -510,7 +517,7 @@ export class SphereScene {
     this._placeFloor();
     this.scene.fog.near = distance - 0.4;
     this.scene.fog.far = distance + 3.4;
-    for (let i = 0; i < N; i++) {
+    for (let i = 0; i < this.n; i++) {
       const mesh = this.points[i];
       mesh.material.color.copy(this.pointFrom[i]).lerp(this.pointTo[i], this.blend);
       const target = i === this.dragIndex ? 1.35 : i === this.hoverIndex ? 1.22 : 1;

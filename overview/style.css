@@ -1,0 +1,46 @@
+/* The overview: the figures side by side, centred on the page. */
+
+.overview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 32px 72px;
+  min-height: 100dvh;
+  padding: 48px 24px;
+}
+
+.tile {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding-bottom: 12px;
+  border-radius: 20px;
+  color: var(--ink-2);
+  text-decoration: none;
+}
+
+.tile canvas {
+  display: block;
+  width: min(380px, 80vw);
+  height: min(380px, 80vw);
+  /* The click goes to the link. */
+  pointer-events: none;
+}
+
+.tile-label {
+  font-size: 18px;
+  font-weight: 550;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  transition: color 0.15s;
+}
+
+.tile:hover .tile-label,
+.tile:focus-visible .tile-label { color: var(--ink); }
+
+.tile:focus-visible { outline-offset: 6px; }
+
+@media (max-width: 760px) {
+  .overview { gap: 20px; padding: 28px 16px; }
+}

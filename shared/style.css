@@ -1,4 +1,5 @@
-/* Tokens. --upper and --lower are the colours of the two squares in the 3D view. */
+/* Tokens. --upper, --lower and --pole are the colours of the groups of points in the 3D view:
+   the upper and the lower polygon, and the poles of the configurations that have them. */
 :root {
   color-scheme: light;
   --page: #f9f9f7;
@@ -13,6 +14,7 @@
   --border-strong: rgba(11, 11, 11, 0.18);
   --upper: #2a78d6;
   --lower: #149a6b;
+  --pole: #3a3d45;
   --good: #008300;
   --warn: #c98500;
   --sans: "Inter Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -173,6 +175,11 @@ i { font-family: var(--serif); font-size: 1.08em; }
 .status-icon { font-size: 11px; }
 .status[data-state="good"] .status-icon { color: var(--good); }
 .status[data-state="warn"] .status-icon { color: var(--warn); }
+
+/* A page without a bar for s: the energy and the actions meet in the middle. */
+.dock-pair {
+  grid-template-columns: 1fr 1fr;
+}
 
 /* One bar for the exponent s. The two classical energies are marked above it. */
 .exponent {

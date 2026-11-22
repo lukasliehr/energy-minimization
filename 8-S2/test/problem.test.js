@@ -1,10 +1,13 @@
-// Checks the numerics against the values stated in arXiv:2609.22077.
+// Checks the numerics for eight points against the values stated in arXiv:2609.22077.
 // Run with: npm test
 import assert from 'node:assert/strict';
 import {
-  A_INFINITY, A_LOG, bestMatching, descend, energy, findSquares, flowStep, forces, hullEdges, hullFaces,
-  optimalA, perturb, prism, prismParameters, randomConfiguration, referenceForce, setAntiprismHeight,
-} from '../src/math.js';
+  bestMatching, descend, energy, flowStep, forces, hullEdges, hullFaces, lines, perturb, randomConfiguration,
+  referenceForce,
+} from '../../shared/math.js';
+import {
+  A_INFINITY, A_LOG, findSquares, optimalA, prism, prismParameters, problem, setAntiprismHeight,
+} from '../src/problem.js';
 
 const close = (x, y, tol, what) => assert.ok(Math.abs(x - y) <= tol, `${what}: ${x} vs ${y}`);
 
@@ -20,13 +23,13 @@ close(optimalA(400), A_INFINITY, 2e-3, 'a_s tends to the packing value');
 // The antiprism at a_s is a critical point, and so is the cube.
 const F = new Float64Array(24);
 for (const s of [0, 1, 2, 6, 20]) {
-  assert.ok(forces(prism(optimalA(s)), s, F) < 1e-12, `antiprism is critical for s=${s}`);
-  assert.ok(forces(prism(1 / 3, 0), s, F) < 1e-12, `cube is critical for s=${s}`);
-  assert.ok(energy(prism(1 / 3, 0), s) > energy(prism(optimalA(s)), s), `cube is worse for s=${s}`);
+  assert.ok(forces(problem.minimizer(s), s, F) < 1e-12, `antiprism is critical for s=${s}`);
+  assert.ok(forces(problem.competitor.make(s), s, F) < 1e-12, `cube is critical for s=${s}`);
+  assert.ok(energy(problem.competitor.make(s), s) > energy(problem.minimizer(s), s), `cube is worse for s=${s}`);
 }
 close(energy(prism(1 / 3, 0), 1), 19.7407740, 1e-6, 'Coulomb energy of the cube');
 
-// Hull combinatorics.
+// Hull combinatorics, and the lines that the page draws.
 const anti = hullFaces(prism(a1));
 assert.equal(anti.length, 10);
 assert.equal(hullEdges(anti).length, 16);
@@ -34,6 +37,12 @@ assert.deepEqual(findSquares(anti).map((f) => f.slice().sort()), [[0, 1, 2, 3], 
 const cube = hullFaces(prism(1 / 3, 0));
 assert.equal(cube.length, 6);
 assert.equal(hullEdges(cube).length, 12);
+for (const s of [0, 1, 6, 24]) {
+  const drawn = lines(problem.minimizer(s), problem.lines);
+  assert.equal(drawn.length, 16, `the 16 edges are drawn for s=${s}`);
+  assert.ok(drawn.every((line) => line[2] === 1), `the edges are fully drawn for s=${s}`);
+}
+assert.equal(lines(prism(1 / 3, 0), problem.lines).length, 12);
 
 // Family parameters round trip.
 const p = prismParameters(prism(0.4, 0.3));
@@ -44,6 +53,13 @@ close(p.theta, 0.3, 1e-14, 'theta round trip');
 const Z = prism(0.2);
 setAntiprismHeight(Z, [0, 1, 2, 3], [4, 5, 6, 7], a1);
 close(energy(Z, 1), energy(prism(a1), 1), 1e-13, 'setAntiprismHeight');
+const W = prism(optimalA(3));
+problem.follow(W, problem.minimizerGroups, 1);
+close(energy(W, 1), energy(prism(a1), 1), 1e-13, 'follow');
+
+// The colouring of the two squares is found again.
+assert.deepEqual(problem.detectGroups(prism(a1), problem.minimizerGroups), problem.minimizerGroups);
+assert.equal(problem.detectGroups(randomConfiguration(8), problem.minimizerGroups), null);
 
 // Matching the identity.
 assert.deepEqual(bestMatching(prism(a1), prism(a1)), [0, 1, 2, 3, 4, 5, 6, 7]);
@@ -51,10 +67,10 @@ assert.deepEqual(bestMatching(prism(a1), prism(a1)), [0, 1, 2, 3, 4, 5, 6, 7]);
 // Gradient descent from random starts reaches the antiprism energy.
 const report = [];
 for (const s of [0, 1, 2, 6, 12, 20]) {
-  const target = energy(prism(optimalA(s)), s);
+  const target = energy(problem.minimizer(s), s);
   let worst = 0, maxIterations = 0, failures = 0;
   for (let trial = 0; trial < 40; trial++) {
-    const Y = randomConfiguration();
+    const Y = randomConfiguration(8);
     const state = { eta: 0.1 };
     let iterations = 0, kicks = 0;
     for (;;) {
@@ -75,16 +91,15 @@ for (const s of [0, 1, 2, 6, 12, 20]) {
   assert.equal(failures, 0, `descent finds the antiprism for s=${s}`);
 }
 console.table(report);
-console.log('a_s for selected s:', [0, 1, 2, 6, 12, 20, 40].map((s) => `${s}: ${optimalA(s).toFixed(6)}`).join('  '), ` a_inf: ${A_INFINITY.toFixed(6)}`);
 
 // The flow steps used for the animation lower the energy at every step, from random
 // starts and from a slightly twisted cube.
 const flowReport = [];
 for (const s of [0, 1, 6, 24]) {
-  const fRef = referenceForce(s, optimalA(s));
+  const fRef = referenceForce(problem.minimizer(s), s);
   let worstIncrease = 0, mostSteps = 0;
   for (let trial = 0; trial < 12; trial++) {
-    const Y = trial === 0 ? prism(1 / 3, 0.008) : randomConfiguration();
+    const Y = trial === 0 ? problem.competitor.twist(problem.competitor.make(s)) : randomConfiguration(8);
     let previous = energy(Y, s, true), steps = 0;
     while (flowStep(Y, s, 0.01) >= 1e-4 * fRef && steps < 200000) {
       const current = energy(Y, s, true);
@@ -104,7 +119,6 @@ console.table(flowReport);
 for (const s of [0, 1, 6]) {
   const h = 1e-3;
   const second = (energy(prism(1 / 3, h), s) - 2 * energy(prism(1 / 3, 0), s) + energy(prism(1 / 3, -h), s)) / (h * h);
-  console.log(`cube, s=${s}: d2E/dtheta2 = ${second.toFixed(5)}`);
-  assert.ok(second < 0);
+  assert.ok(second < 0, `the cube is a saddle for s=${s}`);
 }
-console.log('all checks passed');
+console.log('8-S2: all checks passed');
