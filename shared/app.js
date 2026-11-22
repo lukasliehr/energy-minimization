@@ -200,7 +200,7 @@ export function start(problem) {
       record(1e-12);
       if (excess() <= OPTIMAL_TOLERANCE) break;
       // An equilibrium that is not a minimizer. Leave it by a small move.
-      if (mode === 'symmetric' && round === 0) {
+      if (mode === 'symmetric' && round === 0 && problem.competitor.twist) {
         // A small twist keeps the symmetry, so the competitor turns into the minimizer as a whole.
         Y.set(problem.competitor.twist(Y));
       } else {

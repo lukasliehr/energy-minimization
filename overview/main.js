@@ -8,9 +8,10 @@ import './style.css';
 import { SphereScene } from '../shared/scene.js';
 import { hullFaces, lines } from '../shared/math.js';
 import { problem as eightPoints } from '../8-S2/src/problem.js';
+import { problem as elevenPoints } from '../11-S2/src/problem.js';
 import { problem as fourteenPoints } from '../14-S2/src/problem.js';
 
-const problems = { '8-S2': eightPoints, '14-S2': fourteenPoints };
+const problems = { '8-S2': eightPoints, '11-S2': elevenPoints, '14-S2': fourteenPoints };
 const turning = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const scenes = [];
 

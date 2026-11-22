@@ -5,7 +5,7 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 32px 72px;
+  gap: 32px 48px;
   min-height: 100dvh;
   padding: 48px 24px;
 }
@@ -22,8 +22,8 @@
 
 .tile canvas {
   display: block;
-  width: min(380px, 80vw);
-  height: min(380px, 80vw);
+  width: min(330px, 80vw);
+  height: min(330px, 80vw);
   /* The click goes to the link. */
   pointer-events: none;
 }

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Eleven points on the sphere</title>
+    <meta name="description" content="Interactive 3D companion to the solution of the Thomson problem for 11 points. Drag the points and watch the Coulomb energy rise above its minimum." />
+    <meta name="color-scheme" content="light" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <main>
+      <section class="stage" aria-label="Interactive visualization">
+        <div class="view">
+          <nav class="links" aria-label="Links">
+            <a href="../">Overview</a>
+            <a href="https://github.com/lukasliehr/Thomson-11-Points" target="_blank" rel="noopener">Repository<span aria-hidden="true"> ↗</span></a>
+          </nav>
+
+          <h1 class="sr-only">The Thomson problem for eleven points on the sphere</h1>
+
+          <canvas id="scene" aria-label="Three-dimensional view of eleven points on the unit sphere. Drag a point to move it, drag the background to rotate."></canvas>
+          <p class="fallback" id="fallback" hidden>This visualization needs WebGL, which is not available in this browser.</p>
+        </div>
+
+        <div class="trace-row">
+          <canvas id="trace" class="trace" aria-label="Energy above the minimum during the last ten seconds. The line rises as the points move away from the minimizer."></canvas>
+        </div>
+
+        <div class="dock dock-pair">
+          <div class="meter" role="status" aria-live="off">
+            <span class="meter-name" id="energy-name">Coulomb energy</span>
+            <span class="meter-value" id="energy-value">40.596</span>
+            <span class="status" id="status" data-state="good"><span class="status-icon" aria-hidden="true">✓</span><span id="status-text">minimum</span></span>
+          </div>
+
+          <div class="actions">
+            <div class="group" role="group" aria-label="Start from">
+              <button type="button" id="btn-optimum">Minimizer</button>
+              <button type="button" id="btn-competitor">Pentagons</button>
+              <button type="button" id="btn-random">Random</button>
+            </div>
+            <button class="btn primary" type="button" id="btn-relax">
+              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M7 4.5v15l12-7.5z" fill="currentColor" /></svg>
+              Minimize
+            </button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
