@@ -1,7 +1,9 @@
-// Energy minimization on the sphere for configurations of n points: energies,
-// forces, relaxation and a little geometry. A configuration is a Float64Array of
-// length 3n holding (x, y, z) for each point. Everything specific to one value
-// of n lives in the folder of that problem.
+// Energy minimization on spheres: energies, forces, relaxation and a little geometry
+// for configurations of n points on the unit sphere of R^dim. A configuration is a
+// Float64Array of length dim * n holding the coordinates of the points one after the
+// other. space(dim) gives the functions for one dimension. The functions for the
+// ordinary sphere, dim = 3, are also exported directly. Everything specific to one
+// problem lives in the folder of that problem.
 
 /** Riesz kernel as a function of the squared distance. s = 0 is the logarithmic kernel. */
 export function kernel(d2, s) {
@@ -14,179 +16,303 @@ export function kernelNorm(d2, s) {
   return s === 0 ? l : Math.expm1(s * l) / s;
 }
 
-/** Riesz s-energy E_s(Y). With normalized = true every pair contributes (d^{-s} - 1)/s. */
-export function energy(Y, s, normalized = false) {
-  const n = Y.length / 3;
-  let e = 0;
-  for (let i = 0; i < n; i++) {
-    const xi = Y[3 * i], yi = Y[3 * i + 1], zi = Y[3 * i + 2];
-    for (let j = i + 1; j < n; j++) {
-      const dx = xi - Y[3 * j], dy = yi - Y[3 * j + 1], dz = zi - Y[3 * j + 2];
-      const d2 = dx * dx + dy * dy + dz * dz;
-      e += normalized ? kernelNorm(d2, s) : kernel(d2, s);
+const spaces = new Map();
+
+/** The functions for configurations on the unit sphere of R^dim. */
+export function space(dim) {
+  if (!spaces.has(dim)) spaces.set(dim, functionsFor(dim));
+  return spaces.get(dim);
+}
+
+function functionsFor(dim) {
+  const D = dim;
+
+  function squaredDistance(Y, i, j) {
+    let d2 = 0;
+    for (let k = 0; k < D; k++) {
+      const d = Y[D * i + k] - Y[D * j + k];
+      d2 += d * d;
     }
+    return d2;
   }
-  return e;
-}
 
-/** The pairwise distances as [i, j, distance] triples. */
-export function pairDistances(Y) {
-  const n = Y.length / 3, out = [];
-  for (let i = 0; i < n; i++) {
-    for (let j = i + 1; j < n; j++) {
-      out.push([i, j, Math.hypot(Y[3 * i] - Y[3 * j], Y[3 * i + 1] - Y[3 * j + 1], Y[3 * i + 2] - Y[3 * j + 2])]);
-    }
-  }
-  return out;
-}
-
-// Work arrays, one set for every number of points.
-const work = new Map();
-function buffers(n) {
-  if (!work.has(n)) work.set(n, { F: new Float64Array(3 * n), T: new Float64Array(3 * n), W: new Float64Array(n) });
-  return work.get(n);
-}
-
-/**
- * Pair forces of the normalized energy summed for each point, without the projection
- * onto the tangent planes. W, if given, receives the sum of the pair weights of each point.
- */
-function accumulate(Y, s, F, W) {
-  const n = Y.length / 3, q = 1 + 0.5 * s;
-  F.fill(0);
-  if (W) W.fill(0);
-  for (let i = 0; i < n; i++) {
-    for (let j = i + 1; j < n; j++) {
-      const dx = Y[3 * i] - Y[3 * j], dy = Y[3 * i + 1] - Y[3 * j + 1], dz = Y[3 * i + 2] - Y[3 * j + 2];
-      const w = Math.pow(dx * dx + dy * dy + dz * dz, -q);
-      F[3 * i] += w * dx; F[3 * i + 1] += w * dy; F[3 * i + 2] += w * dz;
-      F[3 * j] -= w * dx; F[3 * j + 1] -= w * dy; F[3 * j + 2] -= w * dz;
-      if (W) { W[i] += w; W[j] += w; }
-    }
-  }
-}
-
-/** Project F onto the tangent planes at the points of Y. Returns the largest norm. */
-function project(Y, F) {
-  const n = Y.length / 3;
-  let gmax = 0;
-  for (let i = 0; i < n; i++) {
-    const r = F[3 * i] * Y[3 * i] + F[3 * i + 1] * Y[3 * i + 1] + F[3 * i + 2] * Y[3 * i + 2];
-    F[3 * i] -= r * Y[3 * i]; F[3 * i + 1] -= r * Y[3 * i + 1]; F[3 * i + 2] -= r * Y[3 * i + 2];
-    gmax = Math.max(gmax, Math.hypot(F[3 * i], F[3 * i + 1], F[3 * i + 2]));
-  }
-  return gmax;
-}
-
-/** Move every point by step times its force and put it back on the sphere. */
-function move(Y, F, step, out) {
-  const n = Y.length / 3;
-  for (let i = 0; i < n; i++) {
-    const x = Y[3 * i] + step * F[3 * i], y = Y[3 * i + 1] + step * F[3 * i + 1], z = Y[3 * i + 2] + step * F[3 * i + 2];
-    const norm = 1 / Math.hypot(x, y, z);
-    out[3 * i] = x * norm; out[3 * i + 1] = y * norm; out[3 * i + 2] = z * norm;
-  }
-}
-
-/**
- * Tangential force on each point, that is, minus the gradient of the normalized
- * energy projected onto the tangent planes of the sphere. Returns the largest norm.
- */
-export function forces(Y, s, F) {
-  accumulate(Y, s, F, null);
-  return project(Y, F);
-}
-
-/** Magnitude of the force between the two closest points of Y. It sets the scale of the arrows. */
-export function referenceForce(Y, s) {
-  let d2 = Infinity;
-  for (const [, , d] of pairDistances(Y)) d2 = Math.min(d2, d * d);
-  return Math.pow(d2, -(1 + 0.5 * s)) * Math.sqrt(d2);
-}
-
-/**
- * Projected gradient descent on the sphere with a backtracking line search.
- * state = { eta } carries the step size between calls. maxMove bounds the
- * displacement of any point in one iteration.
- * Returns { gmax, stalled }. stalled means that no further decrease is resolvable.
- */
-export function descend(Y, s, state, iterations, maxMove = Infinity) {
-  const { F, T } = buffers(Y.length / 3);
-  let E0 = energy(Y, s, true);
-  let gmax = 0;
-  for (let it = 0; it < iterations; it++) {
-    gmax = forces(Y, s, F);
-    if (!(gmax > 1e-12)) return { gmax, stalled: true };
-    let g2 = 0;
-    for (let k = 0; k < F.length; k++) g2 += F[k] * F[k];
-    let eta = Math.min(state.eta, maxMove / gmax);
-    let accepted = false;
-    for (let tries = 0; tries < 50; tries++) {
-      move(Y, F, eta, T);
-      const E1 = energy(T, s, true);
-      if (E1 <= E0 - 1e-4 * eta * g2 && E1 < E0) {
-        Y.set(T);
-        E0 = E1;
-        state.eta = eta * 1.6;
-        accepted = true;
-        break;
-      }
-      eta *= 0.5;
-    }
-    if (!accepted) return { gmax, stalled: true };
-  }
-  return { gmax, stalled: false };
-}
-
-/**
- * One explicit Euler step of the gradient flow of the normalized energy on the sphere.
- * The step is short compared with the stiffness of the configuration, so the iterates
- * follow the flow smoothly instead of jumping from one side of a valley to the other,
- * as a line search does. No point moves further than maxMove.
- * Returns the largest tangential force before the step.
- */
-export function flowStep(Y, s, maxMove) {
-  const { F, W } = buffers(Y.length / 3);
-  accumulate(Y, s, F, W);
-  const gmax = project(Y, F);
-  let wmax = 0;
-  for (let i = 0; i < W.length; i++) wmax = Math.max(wmax, W[i]);
-  // The second derivatives of the energy are bounded by a multiple of (1 + 2q) wmax.
-  const q = 1 + 0.5 * s;
-  move(Y, F, Math.min(0.5 / (4 * (1 + 2 * q) * wmax), maxMove / gmax), Y);
-  return gmax;
-}
-
-/** n uniformly random points on the sphere, rejecting configurations with very close pairs. */
-export function randomConfiguration(n, minDistance = 0.35) {
-  const Y = new Float64Array(3 * n);
-  for (let attempt = 0; attempt < 400; attempt++) {
+  /** Riesz s-energy E_s(Y). With normalized = true every pair contributes (d^{-s} - 1)/s. */
+  function energy(Y, s, normalized = false) {
+    const n = Y.length / D;
+    let e = 0;
     for (let i = 0; i < n; i++) {
-      const z = 2 * Math.random() - 1, phi = 2 * Math.PI * Math.random();
-      const r = Math.sqrt(1 - z * z);
-      Y[3 * i] = r * Math.cos(phi); Y[3 * i + 1] = r * Math.sin(phi); Y[3 * i + 2] = z;
+      for (let j = i + 1; j < n; j++) {
+        const d2 = squaredDistance(Y, i, j);
+        e += normalized ? kernelNorm(d2, s) : kernel(d2, s);
+      }
     }
-    if (pairDistances(Y).every((p) => p[2] >= minDistance)) break;
+    return e;
   }
-  return Y;
+
+  /** The pairwise distances as [i, j, distance] triples. */
+  function pairDistances(Y) {
+    const n = Y.length / D, out = [];
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) out.push([i, j, Math.sqrt(squaredDistance(Y, i, j))]);
+    }
+    return out;
+  }
+
+  /** The distances from point i to the other points, in increasing order. */
+  function profile(Y, i) {
+    const n = Y.length / D, distances = [];
+    for (let j = 0; j < n; j++) {
+      if (j !== i) distances.push(Math.sqrt(squaredDistance(Y, i, j)));
+    }
+    return distances.sort((a, b) => a - b);
+  }
+
+  // Work arrays, one set for every number of points.
+  const work = new Map();
+  function buffers(n) {
+    if (!work.has(n)) work.set(n, { F: new Float64Array(D * n), T: new Float64Array(D * n), W: new Float64Array(n) });
+    return work.get(n);
+  }
+  const difference = new Float64Array(D);
+
+  /**
+   * Pair forces of the normalized energy summed for each point, without the projection
+   * onto the tangent spaces. W, if given, receives the sum of the pair weights of each point.
+   */
+  function accumulate(Y, s, F, W) {
+    const n = Y.length / D, q = 1 + 0.5 * s;
+    F.fill(0);
+    if (W) W.fill(0);
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        let d2 = 0;
+        for (let k = 0; k < D; k++) {
+          difference[k] = Y[D * i + k] - Y[D * j + k];
+          d2 += difference[k] * difference[k];
+        }
+        const w = Math.pow(d2, -q);
+        for (let k = 0; k < D; k++) {
+          F[D * i + k] += w * difference[k];
+          F[D * j + k] -= w * difference[k];
+        }
+        if (W) { W[i] += w; W[j] += w; }
+      }
+    }
+  }
+
+  /** Project F onto the tangent spaces at the points of Y. Returns the largest norm. */
+  function project(Y, F) {
+    const n = Y.length / D;
+    let gmax = 0;
+    for (let i = 0; i < n; i++) {
+      let r = 0;
+      for (let k = 0; k < D; k++) r += F[D * i + k] * Y[D * i + k];
+      let norm2 = 0;
+      for (let k = 0; k < D; k++) {
+        F[D * i + k] -= r * Y[D * i + k];
+        norm2 += F[D * i + k] * F[D * i + k];
+      }
+      gmax = Math.max(gmax, Math.sqrt(norm2));
+    }
+    return gmax;
+  }
+
+  /** Put every point back on the sphere. */
+  function normalize(Y) {
+    const n = Y.length / D;
+    for (let i = 0; i < n; i++) {
+      let norm2 = 0;
+      for (let k = 0; k < D; k++) norm2 += Y[D * i + k] * Y[D * i + k];
+      const scale = 1 / Math.sqrt(norm2);
+      for (let k = 0; k < D; k++) Y[D * i + k] *= scale;
+    }
+  }
+
+  /** Move every point by step times its force and put it back on the sphere. */
+  function move(Y, F, step, out) {
+    for (let k = 0; k < Y.length; k++) out[k] = Y[k] + step * F[k];
+    normalize(out);
+  }
+
+  /**
+   * Tangential force on each point, that is, minus the gradient of the normalized
+   * energy projected onto the tangent spaces of the sphere. Returns the largest norm.
+   */
+  function forces(Y, s, F) {
+    accumulate(Y, s, F, null);
+    return project(Y, F);
+  }
+
+  /** Magnitude of the force between the two closest points of Y. It sets the scale of the arrows. */
+  function referenceForce(Y, s) {
+    let d2 = Infinity;
+    for (const [, , d] of pairDistances(Y)) d2 = Math.min(d2, d * d);
+    return Math.pow(d2, -(1 + 0.5 * s)) * Math.sqrt(d2);
+  }
+
+  /**
+   * Projected gradient descent on the sphere with a backtracking line search.
+   * state = { eta } carries the step size between calls. maxMove bounds the
+   * displacement of any point in one iteration.
+   * Returns { gmax, stalled }. stalled means that no further decrease is resolvable.
+   */
+  function descend(Y, s, state, iterations, maxMove = Infinity) {
+    const { F, T } = buffers(Y.length / D);
+    let E0 = energy(Y, s, true);
+    let gmax = 0;
+    for (let it = 0; it < iterations; it++) {
+      gmax = forces(Y, s, F);
+      if (!(gmax > 1e-12)) return { gmax, stalled: true };
+      let g2 = 0;
+      for (let k = 0; k < F.length; k++) g2 += F[k] * F[k];
+      let eta = Math.min(state.eta, maxMove / gmax);
+      let accepted = false;
+      for (let tries = 0; tries < 50; tries++) {
+        move(Y, F, eta, T);
+        const E1 = energy(T, s, true);
+        if (E1 <= E0 - 1e-4 * eta * g2 && E1 < E0) {
+          Y.set(T);
+          E0 = E1;
+          state.eta = eta * 1.6;
+          accepted = true;
+          break;
+        }
+        eta *= 0.5;
+      }
+      if (!accepted) return { gmax, stalled: true };
+    }
+    return { gmax, stalled: false };
+  }
+
+  /**
+   * One explicit Euler step of the gradient flow of the normalized energy on the sphere.
+   * The step is short compared with the stiffness of the configuration, so the iterates
+   * follow the flow smoothly instead of jumping from one side of a valley to the other,
+   * as a line search does. No point moves further than maxMove.
+   * Returns the largest tangential force before the step.
+   */
+  function flowStep(Y, s, maxMove) {
+    const { F, W } = buffers(Y.length / D);
+    accumulate(Y, s, F, W);
+    const gmax = project(Y, F);
+    let wmax = 0;
+    for (let i = 0; i < W.length; i++) wmax = Math.max(wmax, W[i]);
+    // The second derivatives of the energy are bounded by a multiple of (1 + 2q) wmax.
+    const q = 1 + 0.5 * s;
+    move(Y, F, Math.min(0.5 / (4 * (1 + 2 * q) * wmax), maxMove / gmax), Y);
+    return gmax;
+  }
+
+  /** A standard normal random number. */
+  function gauss() {
+    return Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random());
+  }
+
+  /** n uniformly random points on the sphere, rejecting configurations with very close pairs. */
+  function randomConfiguration(n, minDistance = 0.35) {
+    const Y = new Float64Array(D * n);
+    for (let attempt = 0; attempt < 400; attempt++) {
+      for (let k = 0; k < Y.length; k++) Y[k] = gauss();
+      normalize(Y);
+      if (pairDistances(Y).every((p) => p[2] >= minDistance)) break;
+    }
+    return Y;
+  }
+
+  /** Move every point by a random vector of the given size and put it back on the sphere. */
+  function perturb(Y, size) {
+    for (let k = 0; k < Y.length; k++) Y[k] += size * (2 * Math.random() - 1);
+    normalize(Y);
+  }
+
+  /** Permutation p minimizing the total squared distance between from[i] and to[p[i]]. */
+  function bestMatching(from, to) {
+    const n = from.length / D;
+    const cost = [];
+    for (let i = 0; i < n; i++) {
+      cost.push(new Float64Array(n));
+      for (let j = 0; j < n; j++) {
+        let d2 = 0;
+        for (let k = 0; k < D; k++) {
+          const d = from[D * i + k] - to[D * j + k];
+          d2 += d * d;
+        }
+        cost[i][j] = d2;
+      }
+    }
+    return assignment(cost);
+  }
+
+  /** Interpolation along great circles between two configurations, point by point. */
+  function slerpConfiguration(from, to, t, out) {
+    const n = from.length / D;
+    const side = new Float64Array(D);
+    for (let i = 0; i < n; i++) {
+      let dot = 0;
+      for (let k = 0; k < D; k++) dot += from[D * i + k] * to[D * i + k];
+      dot = Math.max(-1, Math.min(1, dot));
+      const omega = Math.acos(dot);
+      if (omega < 1e-6) {
+        for (let k = 0; k < D; k++) out[D * i + k] = to[D * i + k];
+      } else if (Math.PI - omega < 1e-3) {
+        // Antipodal points: go round through a direction perpendicular to the first point.
+        let least = 0;
+        for (let k = 1; k < D; k++) {
+          if (Math.abs(from[D * i + k]) < Math.abs(from[D * i + least])) least = k;
+        }
+        let norm2 = 0;
+        for (let k = 0; k < D; k++) {
+          side[k] = (k === least ? 1 : 0) - from[D * i + least] * from[D * i + k];
+          norm2 += side[k] * side[k];
+        }
+        const scale = 1 / Math.sqrt(norm2);
+        const c = Math.cos(t * Math.PI), sn = Math.sin(t * Math.PI);
+        for (let k = 0; k < D; k++) out[D * i + k] = c * from[D * i + k] + sn * scale * side[k];
+      } else {
+        const so = Math.sin(omega);
+        const wa = Math.sin((1 - t) * omega) / so, wb = Math.sin(t * omega) / so;
+        for (let k = 0; k < D; k++) out[D * i + k] = wa * from[D * i + k] + wb * to[D * i + k];
+      }
+    }
+    normalize(out);
+    return out;
+  }
+
+  /**
+   * Two points are joined by a line when they are close. The line is fully drawn up to the
+   * distance near and fades out until far, so nothing appears or vanishes abruptly while a
+   * point moves. The two distances lie in the gap between the edges of the minimizer and
+   * its other pairs. Returns [i, j, weight] triples.
+   */
+  function lines(Y, { near, far }) {
+    const n = Y.length / D, list = [];
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const d = Math.sqrt(squaredDistance(Y, i, j));
+        const u = Math.max(0, Math.min(1, (far - d) / (far - near)));
+        const weight = u * u * (3 - 2 * u);
+        if (weight > 0.01) list.push([i, j, weight]);
+      }
+    }
+    return list;
+  }
+
+  return {
+    dim: D, energy, pairDistances, profile, forces, referenceForce, descend, flowStep, randomConfiguration,
+    perturb, bestMatching, slerpConfiguration, lines,
+  };
 }
 
-/** Move every point by a random tangent vector of the given size. */
-export function perturb(Y, size) {
-  const n = Y.length / 3;
-  for (let i = 0; i < n; i++) {
-    const x = Y[3 * i] + size * (2 * Math.random() - 1);
-    const y = Y[3 * i + 1] + size * (2 * Math.random() - 1);
-    const z = Y[3 * i + 2] + size * (2 * Math.random() - 1);
-    const norm = 1 / Math.hypot(x, y, z);
-    Y[3 * i] = x * norm; Y[3 * i + 1] = y * norm; Y[3 * i + 2] = z * norm;
-  }
-}
+// The ordinary sphere in three dimensions.
+export const {
+  energy, pairDistances, profile, forces, referenceForce, descend, flowStep, randomConfiguration, perturb,
+  bestMatching, slerpConfiguration, lines,
+} = space(3);
 
 /**
- * Faces of the convex hull. Each face is a list of vertex indices in cyclic order.
- * Coplanar points are merged into one polygon, so the square antiprism has two squares
- * and eight triangles and the cube has six squares.
+ * Faces of the convex hull of points in three dimensions. Each face is a list of vertex
+ * indices in cyclic order. Coplanar points are merged into one polygon, so the square
+ * antiprism has two squares and eight triangles and the cube has six squares.
  */
 export function hullFaces(Y, eps = 1e-5) {
   const n = Y.length / 3;
@@ -294,49 +420,6 @@ export function assignment(cost) {
   return p;
 }
 
-/** Permutation p minimizing the total squared distance between from[i] and to[p[i]]. */
-export function bestMatching(from, to) {
-  const n = from.length / 3;
-  const cost = [];
-  for (let i = 0; i < n; i++) {
-    cost.push(new Float64Array(n));
-    for (let j = 0; j < n; j++) {
-      const dx = from[3 * i] - to[3 * j], dy = from[3 * i + 1] - to[3 * j + 1], dz = from[3 * i + 2] - to[3 * j + 2];
-      cost[i][j] = dx * dx + dy * dy + dz * dz;
-    }
-  }
-  return assignment(cost);
-}
-
-/** Spherical interpolation between two configurations, point by point. */
-export function slerpConfiguration(from, to, t, out) {
-  const n = from.length / 3;
-  for (let i = 0; i < n; i++) {
-    const ax = from[3 * i], ay = from[3 * i + 1], az = from[3 * i + 2];
-    const bx = to[3 * i], by = to[3 * i + 1], bz = to[3 * i + 2];
-    const dot = Math.max(-1, Math.min(1, ax * bx + ay * by + az * bz));
-    const omega = Math.acos(dot);
-    let x, y, z;
-    if (omega < 1e-6) {
-      x = bx; y = by; z = bz;
-    } else if (Math.PI - omega < 1e-3) {
-      // Antipodal points: rotate about an arbitrary perpendicular axis.
-      let px = -ay, py = ax;
-      if (Math.hypot(px, py) < 1e-6) { px = 1; py = 0; }
-      const pn = 1 / Math.hypot(px, py);
-      const c = Math.cos(t * Math.PI), sn = Math.sin(t * Math.PI);
-      x = c * ax + sn * px * pn; y = c * ay + sn * py * pn; z = c * az;
-    } else {
-      const so = Math.sin(omega);
-      const wa = Math.sin((1 - t) * omega) / so, wb = Math.sin(t * omega) / so;
-      x = wa * ax + wb * bx; y = wa * ay + wb * by; z = wa * az + wb * bz;
-    }
-    const norm = 1 / Math.hypot(x, y, z);
-    out[3 * i] = x * norm; out[3 * i + 1] = y * norm; out[3 * i + 2] = z * norm;
-  }
-  return out;
-}
-
 /** Root of an increasing function on [lo, hi] by bisection. */
 export function bisect(f, lo, hi) {
   for (let k = 0; k < 200; k++) {
@@ -348,9 +431,10 @@ export function bisect(f, lo, hi) {
 }
 
 /**
- * Colour two sets of points, a and b, with the groups 0 and 1. The points keep the groups
- * in current where possible. If that does not decide, the higher set gets group 0.
- * groups holds the colouring of the remaining points and is completed and returned.
+ * Colour two sets of points on the ordinary sphere, a and b, with the groups 0 and 1.
+ * The points keep the groups in current where possible. If that does not decide, the
+ * higher set gets group 0. groups holds the colouring of the remaining points and is
+ * completed and returned.
  */
 export function assignSides(Y, a, b, current, groups = new Array(Y.length / 3).fill(-1)) {
   const agreement = (t, u) => t.filter((m) => current[m] === 0).length + u.filter((m) => current[m] === 1).length;
@@ -360,23 +444,4 @@ export function assignSides(Y, a, b, current, groups = new Array(Y.length / 3).f
   a.forEach((m) => { groups[m] = 0; });
   b.forEach((m) => { groups[m] = 1; });
   return groups;
-}
-
-/**
- * Two points are joined by a line when they are close. The line is fully drawn up to the
- * distance near and fades out until far, so nothing appears or vanishes abruptly while a
- * point moves. The two distances lie in the gap between the edges of the minimizer and
- * its other pairs. Returns [i, j, weight] triples.
- */
-export function lines(Y, { near, far }) {
-  const n = Y.length / 3, list = [];
-  for (let i = 0; i < n; i++) {
-    for (let j = i + 1; j < n; j++) {
-      const d = Math.hypot(Y[3 * i] - Y[3 * j], Y[3 * i + 1] - Y[3 * j + 1], Y[3 * i + 2] - Y[3 * j + 2]);
-      const u = Math.max(0, Math.min(1, (far - d) / (far - near)));
-      const weight = u * u * (3 - 2 * u);
-      if (weight > 0.01) list.push([i, j, weight]);
-    }
-  }
-  return list;
 }

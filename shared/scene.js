@@ -71,13 +71,21 @@ export class SphereScene {
   /**
    * count: number of points. groupColors: the CSS variable with the colour of each group.
    * interactive = false gives a view that only turns by itself, as on the overview page.
+   * inside = true is for points inside the ball, as in the picture of a three-sphere: a
+   * point is then dragged parallel to the screen, and lines may be curved.
+   * crossWeight makes the lines between points of different groups thinner.
    */
-  constructor(canvas, { count, handlers = {}, groupColors = ['--upper', '--lower'], pointRadius = 0.055, interactive = true }) {
+  constructor(canvas, {
+    count, handlers = {}, groupColors = ['--upper', '--lower'], pointRadius = 0.055, interactive = true,
+    inside = false, crossWeight = 1,
+  }) {
     this.canvas = canvas;
     this.n = count;
     this.handlers = handlers;
     this.groupColors = groupColors;
     this.pointRadius = pointRadius;
+    this.inside = inside;
+    this.crossWeight = crossWeight;
     this.positions = new Float64Array(3 * this.n);
     // Colours of the points and of the lines change by blending from one colouring to the next.
     const colors = (count) => Array.from({ length: count }, () => new THREE.Color());
@@ -87,6 +95,9 @@ export class SphereScene {
     this.pointTo = colors(this.n);
     this.pairFrom = colors((this.n * (this.n - 1)) / 2);
     this.pairTo = colors((this.n * (this.n - 1)) / 2);
+    // The thickness of the line of each pair, as a factor, blends in the same way.
+    this.emphasisFrom = new Float64Array((this.n * (this.n - 1)) / 2).fill(1);
+    this.emphasisTo = new Float64Array((this.n * (this.n - 1)) / 2).fill(1);
     this.blend = 1;
     this.dragIndex = -1;
     this.dragFar = false;
@@ -178,7 +189,8 @@ export class SphereScene {
   _buildEdges() {
     const geometry = new THREE.CylinderGeometry(1, 1, 1, 10, 1, true);
     const material = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    this.edges = new THREE.InstancedMesh(geometry, material, (this.n * (this.n - 1)) / 2);
+    // A straight line is one cylinder. A curved line consists of up to 36 short ones.
+    this.edges = new THREE.InstancedMesh(geometry, material, ((this.n * (this.n - 1)) / 2) * (this.inside ? 36 : 1));
     this.edges.count = 0;
     this.edges.frustumCulled = false;
     this.scene.add(this.edges);
@@ -280,18 +292,20 @@ export class SphereScene {
     u.uGlassAlpha.value = theme.glassAlpha;
     u.uRimAlpha.value = theme.rimAlpha;
     u.uSpecular.value = theme.specular;
-    this._fillColors(this.groupsFrom, this.pointFrom, this.pairFrom);
-    this._fillColors(this.groupsTo, this.pointTo, this.pairTo);
+    this._fillColors(this.groupsFrom, this.pointFrom, this.pairFrom, this.emphasisFrom);
+    this._fillColors(this.groupsTo, this.pointTo, this.pairTo, this.emphasisTo);
     if (this.lastEdges) this.setEdges(this.lastEdges);
   }
 
   /** Colours of a colouring: a point has the colour of its group, a line inside one group too. */
-  _fillColors(groups, points, pairs) {
+  _fillColors(groups, points, pairs, emphasis) {
     let index = 0;
     for (let i = 0; i < this.n; i++) {
       points[i].set(groups[i] >= 0 ? this.theme.groups[groups[i]] : this.theme.neutral);
       for (let j = i + 1; j < this.n; j++) {
-        pairs[index++].set(groups[i] === groups[j] && groups[i] >= 0 ? this.theme.groups[groups[i]] : this.theme.edge);
+        const together = groups[i] === groups[j] && groups[i] >= 0;
+        pairs[index].set(together ? this.theme.groups[groups[i]] : this.theme.edge);
+        emphasis[index++] = together ? 1 : this.crossWeight;
       }
     }
   }
@@ -300,18 +314,21 @@ export class SphereScene {
   setGroups(groups) {
     this.groupsFrom = groups.slice();
     this.groupsTo = groups.slice();
-    this._fillColors(groups, this.pointFrom, this.pairFrom);
-    this._fillColors(groups, this.pointTo, this.pairTo);
+    this._fillColors(groups, this.pointFrom, this.pairFrom, this.emphasisFrom);
+    this._fillColors(groups, this.pointTo, this.pairTo, this.emphasisTo);
     this.blend = 1;
   }
 
   /** Start a gradual change from the colours shown now to those of groups. Advance it with setGroupBlend. */
   startGroupTransition(groups) {
     for (let i = 0; i < this.n; i++) this.pointFrom[i].lerp(this.pointTo[i], this.blend);
-    for (let k = 0; k < this.pairFrom.length; k++) this.pairFrom[k].lerp(this.pairTo[k], this.blend);
+    for (let k = 0; k < this.pairFrom.length; k++) {
+      this.pairFrom[k].lerp(this.pairTo[k], this.blend);
+      this.emphasisFrom[k] += (this.emphasisTo[k] - this.emphasisFrom[k]) * this.blend;
+    }
     if (this.blend >= 0.5) this.groupsFrom = this.groupsTo;
     this.groupsTo = groups.slice();
-    this._fillColors(groups, this.pointTo, this.pairTo);
+    this._fillColors(groups, this.pointTo, this.pairTo, this.emphasisTo);
     this.blend = 0;
   }
 
@@ -326,30 +343,50 @@ export class SphereScene {
   }
 
   /**
-   * edges is a list of [i, j, weight] with weight in (0, 1]. A line gets thinner and
-   * paler as its weight falls, so that lines appear and vanish gradually.
+   * edges is a list of [i, j, weight] or [i, j, weight, pieces] with weight in (0, 1].
+   * A line gets thinner and paler as its weight falls, so that lines appear and vanish
+   * gradually. Without pieces the line is the straight segment between the two points.
+   * With pieces it is curved: each piece is a list of numbers x, y, z, x, y, z, ...
    */
   setEdges(edges) {
     this.lastEdges = edges;
-    const Y = this.positions;
+    const Y = this.positions, capacity = this.edges.instanceMatrix.count;
     const a = new THREE.Vector3(), b = new THREE.Vector3(), direction = new THREE.Vector3();
     const matrix = new THREE.Matrix4(), quaternion = new THREE.Quaternion(), scale = new THREE.Vector3();
     const color = new THREE.Color(), background = new THREE.Color(this.theme.background);
-    edges.forEach(([i, j, weight], index) => {
-      a.set(Y[3 * i], Y[3 * i + 1], Y[3 * i + 2]);
-      b.set(Y[3 * j], Y[3 * j + 1], Y[3 * j + 2]);
+    let index = 0;
+    const segment = (radius) => {
+      if (index >= capacity) return;
       direction.subVectors(b, a);
       const length = direction.length();
       quaternion.setFromUnitVectors(Y_AXIS, direction.divideScalar(length || 1));
-      const radius = 0.0065 * weight;
       scale.set(radius, length, radius);
       matrix.compose(a.add(b).multiplyScalar(0.5), quaternion, scale);
       this.edges.setMatrixAt(index, matrix);
-      const pair = (i * (2 * this.n - i - 1)) / 2 + (j - i - 1);
-      color.copy(this.pairFrom[pair]).lerp(this.pairTo[pair], this.blend).lerp(background, 0.45 * (1 - weight));
       this.edges.setColorAt(index, color);
-    });
-    this.edges.count = edges.length;
+      index++;
+    };
+    for (const [i, j, weight, pieces] of edges) {
+      const pair = (i * (2 * this.n - i - 1)) / 2 + (j - i - 1);
+      const emphasis = this.emphasisFrom[pair] + (this.emphasisTo[pair] - this.emphasisFrom[pair]) * this.blend;
+      const strength = weight * emphasis;
+      const radius = 0.0065 * strength;
+      color.copy(this.pairFrom[pair]).lerp(this.pairTo[pair], this.blend).lerp(background, 0.45 * (1 - strength));
+      if (!pieces) {
+        a.set(Y[3 * i], Y[3 * i + 1], Y[3 * i + 2]);
+        b.set(Y[3 * j], Y[3 * j + 1], Y[3 * j + 2]);
+        segment(radius);
+        continue;
+      }
+      for (const piece of pieces) {
+        for (let k = 0; k + 5 < piece.length; k += 3) {
+          a.set(piece[k], piece[k + 1], piece[k + 2]);
+          b.set(piece[k + 3], piece[k + 4], piece[k + 5]);
+          segment(radius);
+        }
+      }
+    }
+    this.edges.count = index;
     this.edges.instanceMatrix.needsUpdate = true;
     if (this.edges.instanceColor) this.edges.instanceColor.needsUpdate = true;
   }
@@ -414,10 +451,25 @@ export class SphereScene {
         const py = rect.top + (0.5 - 0.5 * projected.y) * rect.height;
         const distance = Math.hypot(px - event.clientX, py - event.clientY);
         if (distance >= threshold) continue;
-        const score = distance + (isNear(p) ? 0 : 1000);
+        // Inside the ball the point in front wins: projected.z grows with the distance from the camera.
+        const score = this.inside ? distance + 400 * projected.z : distance + (isNear(p) ? 0 : 1000);
         if (score < bestScore) { bestScore = score; best = i; }
       }
       return best;
+    };
+
+    // Inside the ball a point is dragged in the plane through it that is parallel to the screen.
+    const plane = new THREE.Plane(), forward = new THREE.Vector3();
+    const toPlane = (event, index) => {
+      const rect = canvas.getBoundingClientRect();
+      pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
+      raycaster.setFromCamera(pointer, this.camera);
+      this.camera.getWorldDirection(forward);
+      plane.setFromNormalAndCoplanarPoint(forward, this.points[index].position);
+      const hit = raycaster.ray.intersectPlane(plane, new THREE.Vector3());
+      if (!hit) return null;
+      // Stay inside the ball. Its boundary is a single point of the three-sphere.
+      return hit.length() > 0.97 ? hit.setLength(0.97) : hit;
     };
 
     const toSphere = (event, far) => {
@@ -454,8 +506,8 @@ export class SphereScene {
 
     canvas.addEventListener('pointermove', (event) => {
       if (this.dragIndex >= 0) {
-        const p = toSphere(event, this.dragFar);
-        this.handlers.onDrag?.(this.dragIndex, p.x, p.y, p.z);
+        const p = this.inside ? toPlane(event, this.dragIndex) : toSphere(event, this.dragFar);
+        if (p) this.handlers.onDrag?.(this.dragIndex, p.x, p.y, p.z);
       } else if (event.pointerType !== 'touch' && event.buttons === 0) {
         setHover(pick(event));
       }

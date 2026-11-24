@@ -1,19 +1,18 @@
 // The page of one problem: the sphere with its points, the line of the energy above
-// the minimum, and the bar of controls. Everything that depends on the number of
-// points comes from the description of the problem, see for example 8-S2/src/problem.js.
+// the minimum, and the bar of controls. Everything that depends on the problem comes
+// from its description, see for example 8-S2/src/problem.js. A problem on the
+// three-sphere, like 9-S3, also has a picture that can be turned, see chart.js.
 
 import '@fontsource-variable/inter';
 import './style.css';
 
 import { SphereScene } from './scene.js';
 import { Trace } from './trace.js';
-import {
-  bestMatching, descend, energy, flowStep, forces, hullFaces, lines, perturb, randomConfiguration,
-  referenceForce, slerpConfiguration,
-} from './math.js';
+import { space } from './math.js';
+import { IDENTITY, between, inverse, pushForward, transform } from './chart.js';
+import { picture, sceneOptions } from './display.js';
 
 const $ = (id) => document.getElementById(id);
-const OPTIMAL_TOLERANCE = 1e-8;
 const DISPLAY_TOLERANCE = 5e-10;
 const MIN_SEPARATION = 0.07;
 const SNAP = 0.022;
@@ -25,14 +24,24 @@ const minus = (text) => text.replace('-', '−');
 const ease = (u) => (u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2);
 /** Clock of the relaxation: starts from rest, is fastest early on and settles slowly. */
 const settle = (u) => 1 - Math.pow(1 - Math.pow(u, 1.6), 2.4);
+const smooth = (u) => u * u * (3 - 2 * u);
 
 export function start(problem) {
   const N = problem.n;
+  const D = problem.dim ?? 3;
+  const {
+    bestMatching, descend, energy, flowStep, forces, perturb, randomConfiguration, referenceForce,
+    slerpConfiguration,
+  } = space(D);
   const NO_GROUPS = new Array(N).fill(-1);
+  // A configuration counts as a minimizer if its energy is this close to the minimum
+  // and problem.detectGroups recognizes it.
+  const OPTIMAL_TOLERANCE = problem.tolerance ?? 1e-8;
   const fixedExponent = problem.exponent.fixed;
   const S_MAX = problem.exponent.max ?? 0;
   // Motions are timed for eight points. With more points the same motion is a longer path.
   const scale = Math.sqrt(N / 8);
+  const view = problem.view;
 
   // The bar for s: the first third runs linearly from the logarithmic energy (s = 0)
   // to the Coulomb energy (s = 1), the rest grows quadratically up to S_MAX.
@@ -56,19 +65,28 @@ export function start(problem) {
     dragging: false,
     excess: 0,
     dirty: true,
+    // Problems on the three-sphere only: the position of the bar that turns the picture,
+    // a running change of it, and the motion that carries the minimizer of the
+    // description to the place where the page shows it.
+    view: view?.initial ?? 0,
+    viewMove: null,
+    pose: IDENTITY,
   };
 
-  const F = new Float64Array(3 * N);
+  const F = new Float64Array(D * N);
   const trace = new Trace($('trace'));
+
+  /** The frame of the picture, see chart.js. */
+  const frame = () => transform(state.pose, view.frame(state.view));
+  /** A configuration of the description at the place where the page shows it. */
+  const posed = (Y) => (view ? transform(state.pose, Y) : Y.slice());
 
   // ---- scene ----------------------------------------------------------------
 
   let scene = null;
   try {
     scene = new SphereScene($('scene'), {
-      count: N,
-      groupColors: problem.groupColors,
-      pointRadius: problem.pointRadius,
+      ...sceneOptions(problem),
       handlers: {
         onInteract: () => scene.setAutoRotate(false),
         onDragStart: () => {
@@ -77,11 +95,15 @@ export function start(problem) {
           state.dragging = true;
         },
         onDrag: (index, x, y, z) => {
+          // The place in the picture, as a point of the sphere of the problem.
+          const point = view ? inverse(x, y, z, frame(), new Float64Array(4)) : [x, y, z];
           for (let j = 0; j < N; j++) {
             if (j === index) continue;
-            if (Math.hypot(x - state.Y[3 * j], y - state.Y[3 * j + 1], z - state.Y[3 * j + 2]) < MIN_SEPARATION) return;
+            let d2 = 0;
+            for (let k = 0; k < D; k++) d2 += (point[k] - state.Y[D * j + k]) ** 2;
+            if (d2 < MIN_SEPARATION * MIN_SEPARATION) return;
           }
-          state.Y[3 * index] = x; state.Y[3 * index + 1] = y; state.Y[3 * index + 2] = z;
+          for (let k = 0; k < D; k++) state.Y[D * index + k] = point[k];
           state.mode = 'free';
           state.dirty = true;
         },
@@ -120,7 +142,8 @@ export function start(problem) {
         button.setAttribute('aria-pressed', String(Number(button.dataset.s) === s));
       });
     }
-    $('energy-name').textContent = s === 0 ? 'Logarithmic energy' : s === 1 ? 'Coulomb energy' : 'Riesz energy';
+    $('energy-name').textContent = problem.energyName
+      ?? (s === 0 ? 'Logarithmic energy' : s === 1 ? 'Coulomb energy' : 'Riesz energy');
     if (state.relax) startRelax();
     state.dirty = true;
   }
@@ -131,10 +154,10 @@ export function start(problem) {
   function morphTo(target, final) {
     state.relax = null;
     const permutation = bestMatching(state.Y, target);
-    const to = new Float64Array(3 * N), groups = [];
+    const to = new Float64Array(D * N), groups = [];
     for (let i = 0; i < N; i++) {
       const j = permutation[i];
-      to[3 * i] = target[3 * j]; to[3 * i + 1] = target[3 * j + 1]; to[3 * i + 2] = target[3 * j + 2];
+      for (let k = 0; k < D; k++) to[D * i + k] = target[D * j + k];
       groups.push(final.groups[j]);
     }
     state.mode = 'free';
@@ -152,7 +175,7 @@ export function start(problem) {
     if (u >= 1) {
       state.morph = null;
       // Relabel so that the indices are those of the target.
-      state.Y = final.mode === 'optimum' ? state.minimizer.slice() : final.Y.slice();
+      state.Y = final.mode === 'optimum' ? posed(state.minimizer) : final.Y.slice();
       state.groups = final.groups.slice();
       scene?.setGroups(state.groups);
       state.mode = final.mode;
@@ -177,7 +200,7 @@ export function start(problem) {
     const record = (minimum) => {
       const last = frames[frames.length - 1];
       let d2 = 0;
-      for (let k = 0; k < 3 * N; k++) d2 += (Y[k] - last[k]) ** 2;
+      for (let k = 0; k < D * N; k++) d2 += (Y[k] - last[k]) ** 2;
       const d = Math.sqrt(d2);
       if (d < minimum) return;
       frames.push(Y.slice());
@@ -185,17 +208,20 @@ export function start(problem) {
     };
     const excess = () => energy(Y, s) - state.eMin;
     for (let round = 0; round < 7; round++) {
-      // Follow the flow until the forces are small.
+      // Follow the flow until the forces are small, or until the energy is so close to
+      // the minimum that the rest of the way cannot be seen.
       for (let step = 0; step < 60000; step++) {
         const gmax = flowStep(Y, s, 0.01);
         record(0.004 * scale);
-        if (gmax < 1e-4 * state.fRef) break;
+        if (gmax < 1e-4 * state.fRef || (step % 50 === 49 && excess() <= 10 * OPTIMAL_TOLERANCE)) break;
       }
       // The rest of the way is too short to be seen. Finish it with the fast solver.
       const solver = { eta: 0.05 };
       for (let pass = 0; pass < 200; pass++) {
         const result = descend(Y, s, solver, 50);
         if (result.stalled || result.gmax < 1e-10 * state.fRef) break;
+        // Where the way ends on an exact copy of the minimizer anyway, this is close enough.
+        if (problem.pose && excess() <= OPTIMAL_TOLERANCE) break;
       }
       record(1e-12);
       if (excess() <= OPTIMAL_TOLERANCE) break;
@@ -221,7 +247,22 @@ export function start(problem) {
     // can come in gradually on the way instead of switching on arrival.
     const last = path.frames[path.frames.length - 1];
     const groups = (path.reachesMinimum && problem.detectGroups(last, state.groups)) || null;
-    state.relax = { ...path, groups, start: performance.now(), duration, index: 0 };
+    // On the three-sphere the picture turns on the way, so that the minimizer ends up in
+    // the same place of the picture as before. A turn of the picture changes no distance.
+    const poseTo = (groups && problem.pose?.(last, groups, state.pose)) || null;
+    if (poseTo) {
+      // The way ends on the exact copy of the minimizer, with the labels of the points as they are.
+      const copy = transform(poseTo, state.minimizer), exact = new Float64Array(D * N);
+      bestMatching(copy, last).forEach((m, i) => {
+        for (let k = 0; k < D; k++) exact[D * m + k] = copy[D * i + k];
+      });
+      let d2 = 0;
+      for (let k = 0; k < D * N; k++) d2 += (exact[k] - last[k]) ** 2;
+      path.frames.push(exact);
+      path.lengths.push(path.length + Math.sqrt(d2));
+      path.length += Math.sqrt(d2);
+    }
+    state.relax = { ...path, groups, poseFrom: state.pose, poseTo, start: performance.now(), duration, index: 0 };
     scene?.startGroupTransition(groups || state.groups);
     state.dirty = true;
   }
@@ -230,7 +271,8 @@ export function start(problem) {
     const relax = state.relax;
     const { frames, lengths } = relax;
     const u = Math.max(0, Math.min((now - relax.start) / relax.duration, 1));
-    scene?.setGroupBlend(u * u * (3 - 2 * u));
+    scene?.setGroupBlend(smooth(u));
+    if (relax.poseTo) state.pose = u >= 1 ? relax.poseTo : between(relax.poseFrom, relax.poseTo, smooth(u));
     if (u >= 1 || frames.length === 1) {
       state.Y.set(frames[frames.length - 1]);
       state.relax = null;
@@ -260,12 +302,14 @@ export function start(problem) {
     state.excess = value - state.eMin;
     forces(Y, s, F);
     if (scene) {
-      scene.setPositions(Y);
-      scene.setFaces(hullFaces(Y));
-      scene.setEdges(lines(Y, problem.lines));
-      scene.setForces(F, state.fRef);
+      const chart = view ? frame() : null;
+      const { positions, faces, edges } = picture(problem, Y, chart);
+      scene.setPositions(positions);
+      scene.setFaces(faces);
+      scene.setEdges(edges);
+      scene.setForces(view ? pushForward(Y, F, chart) : F, state.fRef);
     }
-    const optimal = state.excess < DISPLAY_TOLERANCE;
+    const optimal = state.mode === 'optimum' || state.excess < DISPLAY_TOLERANCE;
     $('energy-value').textContent = Number.isFinite(value) ? minus(value.toFixed(3)) : '∞';
     $('status').dataset.state = optimal ? 'good' : 'warn';
     $('status').querySelector('.status-icon').textContent = optimal ? '✓' : '▲';
@@ -279,37 +323,73 @@ export function start(problem) {
    * of the competitor, so that the line has the same meaning for every exponent.
    */
   function excessLevel() {
-    if (state.excess < DISPLAY_TOLERANCE) return 0;
+    if (state.mode === 'optimum' || state.excess < DISPLAY_TOLERANCE) return 0;
     const x = state.excess / state.competitorExcess;
     return x / (x + 3);
   }
 
   // ---- controls -------------------------------------------------------------
 
+  // A handle clicks into place near a mark. This only applies while a pointer moves
+  // the handle, so that the arrow keys can still step through.
+  function snapping(slider, marks, onInput) {
+    let pointerDown = false;
+    slider.addEventListener('pointerdown', () => { pointerDown = true; });
+    slider.addEventListener('keydown', () => { pointerDown = false; });
+    window.addEventListener('pointerup', () => { pointerDown = false; });
+    slider.addEventListener('input', () => {
+      let t = Number(slider.value);
+      const mark = marks.find((m) => Math.abs(t - m) < SNAP);
+      if (pointerDown && mark !== undefined) {
+        t = mark;
+        slider.value = t;
+      }
+      onInput(t);
+    });
+  }
+
   if (fixedExponent === undefined) {
     document.querySelectorAll('[data-s]').forEach((button) => {
       button.addEventListener('click', () => setExponent(Number(button.dataset.s)));
     });
-    // Near the Coulomb mark the handle clicks into place. This only applies while a
-    // pointer moves the handle, so that the arrow keys can still step through.
-    let pointerOnSlider = false;
-    $('s-slider').addEventListener('pointerdown', () => { pointerOnSlider = true; });
-    $('s-slider').addEventListener('keydown', () => { pointerOnSlider = false; });
-    window.addEventListener('pointerup', () => { pointerOnSlider = false; });
-    $('s-slider').addEventListener('input', (event) => {
-      const slider = event.target;
-      let t = Number(slider.value);
-      if (pointerOnSlider && Math.abs(t - T_COULOMB) < SNAP) {
-        t = T_COULOMB;
-        slider.value = t;
-      }
-      setExponent(sliderToS(t), false);
+    snapping($('s-slider'), [T_COULOMB], (t) => setExponent(sliderToS(t), false));
+  }
+
+  /** The bar that turns the picture of the three-sphere. */
+  function setView(t, syncSlider = true) {
+    state.view = Math.max(0, Math.min(1, t));
+    if (syncSlider) $('view-slider').value = state.view;
+    document.querySelectorAll('[data-view]').forEach((button) => {
+      button.setAttribute('aria-pressed', String(Math.abs(Number(button.dataset.view) - state.view) < 1e-9));
+    });
+    state.dirty = true;
+  }
+
+  function stepView(now) {
+    const { from, to, start: began, duration } = state.viewMove;
+    const u = Math.min((now - began) / duration, 1);
+    if (u >= 1) state.viewMove = null;
+    setView(u >= 1 ? to : from + (to - from) * ease(u));
+  }
+
+  if (view) {
+    snapping($('view-slider'), view.marks, (t) => {
+      state.viewMove = null;
+      setView(t, false);
+    });
+    document.querySelectorAll('[data-view]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const to = Number(button.dataset.view);
+        state.viewMove = { from: state.view, to, start: performance.now(), duration: 500 + 900 * Math.abs(to - state.view) };
+      });
     });
   }
 
-  $('btn-optimum').addEventListener('click', () => morphTo(state.minimizer, { mode: 'optimum', groups: problem.minimizerGroups }));
+  $('btn-optimum').addEventListener('click', () => {
+    morphTo(posed(state.minimizer), { mode: 'optimum', groups: problem.minimizerGroups });
+  });
   $('btn-competitor').addEventListener('click', () => {
-    morphTo(problem.competitor.make(state.s), { mode: 'symmetric', groups: problem.competitor.groups });
+    morphTo(posed(problem.competitor.make(state.s)), { mode: 'symmetric', groups: problem.competitor.groups });
   });
   $('btn-random').addEventListener('click', () => {
     morphTo(randomConfiguration(N, problem.randomSeparation), { mode: 'free', groups: NO_GROUPS });
@@ -322,12 +402,14 @@ export function start(problem) {
   scene?.setGroups(state.groups);
   scene?.applyColors();
   setExponent(initial);
+  if (view) setView(state.view);
 
   window.addEventListener('resize', () => trace.invalidate());
 
   if (import.meta.env.DEV) window.__app = { state, scene, trace };
 
-  function frame(now) {
+  function frameOfAnimation(now) {
+    if (state.viewMove) stepView(now);
     if (state.morph) stepMorph(now);
     else if (state.relax && !state.dragging) stepRelax(now);
     if (state.dirty) {
@@ -336,7 +418,7 @@ export function start(problem) {
     }
     trace.update(now, excessLevel());
     scene?.render();
-    requestAnimationFrame(frame);
+    requestAnimationFrame(frameOfAnimation);
   }
-  requestAnimationFrame(frame);
+  requestAnimationFrame(frameOfAnimation);
 }

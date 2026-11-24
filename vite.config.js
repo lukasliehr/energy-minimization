@@ -17,6 +17,7 @@ export default defineConfig({
       input: {
         index: 'index.html',
         '8-S2': '8-S2/index.html',
+        '9-S3': '9-S3/index.html',
         '11-S2': '11-S2/index.html',
         '14-S2': '14-S2/index.html',
       },

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nine points on the three-sphere</title>
+    <meta name="description" content="Interactive companion to the minimal harmonic energy of 9 points on the three-sphere: a regular pentagon on a great circle with a square on the orthogonal great circle. Turn the picture, drag the points and watch the energy rise above 35/2." />
+    <meta name="color-scheme" content="light" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <main>
+      <section class="stage" aria-label="Interactive visualization">
+        <div class="view">
+          <nav class="links" aria-label="Links">
+            <a href="../">Overview</a>
+            <a href="https://github.com/lukasliehr/Harmonic-Energy-9-Points-S3" target="_blank" rel="noopener">Repository<span aria-hidden="true"> ↗</span></a>
+          </nav>
+
+          <h1 class="sr-only">The minimal harmonic energy of nine points on the three-sphere</h1>
+
+          <canvas id="scene" aria-label="Nine points on the three-sphere, drawn inside a ball. Drag a point to move it, drag the background to rotate."></canvas>
+          <p class="fallback" id="fallback" hidden>This visualization needs WebGL, which is not available in this browser.</p>
+        </div>
+
+        <div class="trace-row">
+          <canvas id="trace" class="trace" aria-label="Energy above the minimum during the last ten seconds. The line rises as the points move away from the minimizer."></canvas>
+        </div>
+
+        <div class="dock">
+          <div class="meter" role="status" aria-live="off">
+            <span class="meter-name" id="energy-name">Harmonic energy</span>
+            <span class="meter-value" id="energy-value">17.500</span>
+            <span class="status" id="status" data-state="good"><span class="status-icon" aria-hidden="true">✓</span><span id="status-text">minimum</span></span>
+          </div>
+
+          <div class="exponent">
+            <div class="marks">
+              <button type="button" class="mark" data-view="0" aria-pressed="false">Pentagon</button>
+              <button type="button" class="mark" data-view="0.5" aria-pressed="true">Linked</button>
+              <button type="button" class="mark" data-view="1" aria-pressed="false">Square</button>
+            </div>
+            <input type="range" id="view-slider" min="0" max="1" step="0.001" value="0.5" aria-label="Turn the three-sphere. At the left end the pentagon is drawn as a regular pentagon, at the right end the square as a square." />
+          </div>
+
+          <div class="actions">
+            <div class="group" role="group" aria-label="Start from">
+              <button type="button" id="btn-optimum">Minimizer</button>
+              <button type="button" id="btn-competitor">Triangles</button>
+              <button type="button" id="btn-random">Random</button>
+            </div>
+            <button class="btn primary" type="button" id="btn-relax">
+              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M7 4.5v15l12-7.5z" fill="currentColor" /></svg>
+              Minimize
+            </button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

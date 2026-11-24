@@ -233,6 +233,20 @@ i { font-family: var(--serif); font-size: 1.08em; }
 
 .mark[data-s="1"]::after { left: 50%; }
 
+/* The bar that turns the picture of a three-sphere: three marks, and no filled part. */
+.mark[data-view="0"] { left: 0; }
+.mark[data-view="0"]::after { left: 8px; }
+
+.mark[data-view="0.5"] {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.mark[data-view="0.5"]::after { left: 50%; }
+.mark[data-view="1"] { right: 0; }
+.mark[data-view="1"]::after { right: 8px; }
+#view-slider { --p: 0px; }
+
 .exponent-value {
   right: 0;
   font-variant-numeric: tabular-nums;
