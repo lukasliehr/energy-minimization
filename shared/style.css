@@ -92,15 +92,19 @@ i { font-family: var(--serif); font-size: 1.08em; }
   color: var(--ink-2);
 }
 
+/* The links lie over the top of the picture: the way back on the left, the others on
+   the right. The strip between them lets the pointer through to the picture. */
 .links {
   position: absolute;
   z-index: 2;
   top: 24px;
+  left: 28px;
   right: 28px;
   display: flex;
   align-items: center;
   gap: 2px;
   font-size: 13.5px;
+  pointer-events: none;
 }
 
 .links a {
@@ -109,7 +113,10 @@ i { font-family: var(--serif); font-size: 1.08em; }
   color: var(--ink-2);
   text-decoration: none;
   white-space: nowrap;
+  pointer-events: auto;
 }
+
+.links .back { margin-right: auto; }
 
 .links a:hover { background: var(--fill); color: var(--ink); }
 
@@ -388,7 +395,7 @@ input[type="range"]::-moz-range-thumb {
     padding-bottom: 0;
   }
 
-  .links { top: 18px; right: 16px; }
+  .links { top: 18px; left: 16px; right: 16px; }
 }
 
 @media (max-width: 760px) {
