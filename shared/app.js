@@ -11,6 +11,7 @@ import { Trace } from './trace.js';
 import { space } from './math.js';
 import { IDENTITY, between, inverse, pushForward, transform } from './chart.js';
 import { picture, sceneOptions } from './display.js';
+import { connect } from './framed.js';
 
 const $ = (id) => document.getElementById(id);
 const DISPLAY_TOLERANCE = 5e-10;
@@ -151,7 +152,7 @@ export function start(problem) {
   // ---- configurations -------------------------------------------------------
 
   /** Move the points along great circles to the target. final = { mode, groups }. */
-  function morphTo(target, final) {
+  function morphTo(target, final, duration = 800) {
     state.relax = null;
     const permutation = bestMatching(state.Y, target);
     const to = new Float64Array(D * N), groups = [];
@@ -163,7 +164,7 @@ export function start(problem) {
     state.mode = 'free';
     state.groups = groups;
     scene?.startGroupTransition(groups);
-    state.morph = { from: state.Y.slice(), to, start: performance.now(), duration: 800, final: { ...final, Y: target } };
+    state.morph = { from: state.Y.slice(), to, start: performance.now(), duration, final: { ...final, Y: target } };
   }
 
   function stepMorph(now) {
@@ -396,6 +397,47 @@ export function start(problem) {
   });
   $('btn-relax').addEventListener('click', startRelax);
 
+  // ---- back to the start ------------------------------------------------------
+
+  let restoring = null;
+
+  /**
+   * Bring the page back to what it shows at first, within the given time in milliseconds:
+   * the minimizer in its first position, for the first exponent, with the bar in its
+   * first position and without zoom. A page inside the overview does this while it
+   * closes, because this is what its figure on the overview shows. Gives a promise that
+   * is kept when everything has arrived, or null if nothing has to move.
+   */
+  function restore(duration) {
+    const target = posed(problem.minimizer(initial));
+    const matching = bestMatching(state.Y, target);
+    let apart = Boolean(state.morph || state.relax);
+    for (let i = 0; i < N && !apart; i++) {
+      const j = matching[i];
+      apart = state.groups[i] !== problem.minimizerGroups[j];
+      for (let k = 0; k < D; k++) apart ||= Math.abs(state.Y[D * i + k] - target[D * j + k]) > 1e-7;
+    }
+    const zoom = scene?.zoom ?? 1;
+    const turned = Boolean(view) && state.view !== view.initial;
+    if (!apart && !turned && state.s === initial && Math.abs(zoom - 1) < 1e-3) return null;
+    if (apart) morphTo(target, { mode: 'optimum', groups: problem.minimizerGroups }, duration);
+    // All motions run on the same clock, so that they end in the same frame.
+    const start = state.morph?.start ?? performance.now();
+    if (turned) state.viewMove = { from: state.view, to: view.initial, start, duration };
+    return new Promise((resolve) => {
+      restoring = { start, duration, s: state.s, zoom, resolve, arrived: false };
+    });
+  }
+
+  /** The exponent and the zoom on their way back. The points and the bar have their own steps. */
+  function stepRestore(now) {
+    const { start, duration, s, zoom } = restoring;
+    const u = Math.min((now - start) / duration, 1), eased = ease(u);
+    if (s !== initial) setExponent(u >= 1 ? initial : s + (initial - s) * eased);
+    if (zoom !== 1) scene?.setZoom(u >= 1 ? 1 : zoom + (1 - zoom) * eased);
+    restoring.arrived = u >= 1;
+  }
+
   // ---- start ----------------------------------------------------------------
 
   scene?.setAutoRotate(!window.matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -405,10 +447,13 @@ export function start(problem) {
   if (view) setView(state.view);
 
   window.addEventListener('resize', () => trace.invalidate());
+  connect(scene, { restore });
 
   if (import.meta.env.DEV) window.__app = { state, scene, trace };
 
   function frameOfAnimation(now) {
+    // First, because the points end on the minimizer for the exponent that this sets.
+    if (restoring) stepRestore(now);
     if (state.viewMove) stepView(now);
     if (state.morph) stepMorph(now);
     else if (state.relax && !state.dragging) stepRelax(now);
@@ -418,6 +463,11 @@ export function start(problem) {
     }
     trace.update(now, excessLevel());
     scene?.render();
+    if (restoring?.arrived) {
+      const { resolve } = restoring;
+      restoring = null;
+      resolve();
+    }
     requestAnimationFrame(frameOfAnimation);
   }
   requestAnimationFrame(frameOfAnimation);

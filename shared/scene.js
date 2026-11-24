@@ -428,6 +428,48 @@ export class SphereScene {
     this.controls.autoRotate = on;
   }
 
+  /** The direction from the centre of the sphere to the viewer, as a unit vector [x, y, z]. */
+  direction() {
+    return this.camera.position.clone().normalize().toArray();
+  }
+
+  /** Look at the sphere from the given direction. The distance stays as it is. */
+  setDirection([x, y, z]) {
+    const distance = this.camera.position.length();
+    this.camera.position.set(x, y, z).setLength(distance);
+    this.controls.update();
+  }
+
+  /** zoom = 1 is the distance at which everything fits. Smaller values are closer. */
+  setZoom(zoom) {
+    this.camera.position.setLength(this.fitDistance * zoom);
+  }
+
+  /**
+   * The disc that the sphere covers in the picture when the view is not zoomed: its
+   * centre (x, y) and its radius in CSS pixels, measured from the top left corner of
+   * the canvas.
+   */
+  circle() {
+    const distance = this.fitDistance;
+    return {
+      x: this.width / 2,
+      y: this.height / 2 - this._shift(distance),
+      // The outline of a unit sphere at this distance, seen in perspective.
+      radius: (this._pixelsPerUnit(distance) * distance) / Math.sqrt(distance * distance - 1),
+    };
+  }
+
+  /** The length in pixels of a unit of length at the centre of the sphere, seen from the given distance. */
+  _pixelsPerUnit(distance) {
+    return this.height / (2 * Math.tan((this.camera.fov * Math.PI) / 360) * distance);
+  }
+
+  /** The sphere sits this many pixels above the middle of the view, which leaves room for the floor below it. */
+  _shift(distance) {
+    return Math.round(((FIT_BELOW - FIT_ABOVE) / 2) * this._pixelsPerUnit(distance));
+  }
+
   // ---- pointer interaction ------------------------------------------------
 
   _bindPointer() {
@@ -560,8 +602,7 @@ export class SphereScene {
     this.controls.rotateSpeed = (half * (distance - 1)) / Math.PI;
     this.controls.update();
     this.zoom = Math.max(0.42, Math.min(2.4, distance / this.fitDistance));
-    // The sphere sits above the middle of the view, which leaves room for the floor below it.
-    const shift = Math.round((((FIT_BELOW - FIT_ABOVE) / 2) * this.height) / (2 * half * distance));
+    const shift = this._shift(distance);
     if (shift !== this.viewShift) {
       this.viewShift = shift;
       this.camera.setViewOffset(this.width, this.height, 0, shift, this.width, this.height);

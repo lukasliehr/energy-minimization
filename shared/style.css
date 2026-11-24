@@ -120,6 +120,22 @@ i { font-family: var(--serif); font-size: 1.08em; }
 
 .links a:hover { background: var(--fill); color: var(--ink); }
 
+/* ---- a page inside the overview ------------------------------------------ */
+
+/* The overview opens a page in a frame that grows out of the figure that was clicked,
+   see framed.js. Only the sphere is there from the start. The rest of the page appears
+   when the frame has nearly reached its size, and goes first when the page closes. */
+.framed .links,
+.framed .trace-row,
+.framed .dock { transition: opacity 0.28s ease; }
+
+.framed.arriving .links,
+.framed.arriving .trace-row,
+.framed.arriving .dock {
+  opacity: 0;
+  transition-duration: 0.18s;
+}
+
 /* ---- the line of the energy above the minimum, centred below the sphere ---- */
 
 .trace-row {
